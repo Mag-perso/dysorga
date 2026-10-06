@@ -100,6 +100,13 @@ async function synchroniser(famille: string, session: pronote.SessionHandle) {
   return { devoirs: devoirs.length, documents: docs.length };
 }
 
+function erreurLiaison(e: unknown) {
+  const nom = e instanceof Error ? e.name : "";
+  const code = nom === "BadCredentialsError" ? "qr_expire" : nom === "AccountDisabledError" ? "compte_desactive"
+    : nom === "SuspendedIPError" || nom === "RateLimitedError" ? "trop_essais" : "liaison_impossible";
+  return { erreur: code, detail: e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 200) : String(e).slice(0, 200) };
+}
+
 async function synchroFamille(famille: string) {
   try {
     return await synchroniser(famille, await connecter(famille));
@@ -132,16 +139,39 @@ Deno.serve(async (req) => {
     if (!p.qr?.jeton || !p.qr?.url || !/^\d{4}$/.test(String(p.pin ?? ""))) return json({ erreur: "qr_invalide" }, 400);
     const deviceUUID = crypto.randomUUID();
     const session = pronote.createSessionHandle();
+    let r: pronote.RefreshInformation;
     try {
-      const r = await pronote.loginQrCode(session, { deviceUUID, pin: String(p.pin), qr: p.qr });
-      await admin().from("pronote_comptes").upsert({
-        famille_id: membre.famille_id, url: r.url, username: r.username, token: r.token, kind: r.kind,
-        device_uuid: deviceUUID, navigator_identifier: r.navigatorIdentifier,
-      });
-      const res = await synchroniser(membre.famille_id, session);
-      return json({ ok: true, ...res });
+      r = await pronote.loginQrCode(session, { deviceUUID, pin: String(p.pin), qr: p.qr });
     } catch (e) {
-      return json({ erreur: "liaison_impossible", detail: e instanceof Error ? e.name : "" }, 400);
+      if (!(e instanceof pronote.SecurityError)) return json(erreurLiaison(e), 400);
+      // Double authentification demandée par le collège : on déclare DysOrga comme appareil de confiance.
+      const h = e.handle;
+      if (h.shouldCustomPassword || h.shouldCustomDoubleAuth) return json({ erreur: "premiere_connexion" }, 400);
+      const pinSecu = String(p.pinSecurite ?? "");
+      if (h.shouldEnterPIN && !/^\d{4}$/.test(pinSecu)) return json({ erreur: "pin_securite" }, 400);
+      try {
+        if (h.shouldEnterPIN && !(await pronote.securityCheckPIN(session, pinSecu))) return json({ erreur: "pin_securite_faux" }, 400);
+        if (h.shouldEnterSource) await pronote.securitySource(session, "DysOrga");
+        await pronote.securitySave(session, h, {
+          ...(h.shouldEnterPIN ? { pin: pinSecu } : {}),
+          ...(h.shouldEnterSource ? { deviceName: "DysOrga" } : {}),
+        });
+        r = await pronote.finishLoginManually(session, h.context.authentication, h.context.identity, h.context.initialUsername);
+      } catch (e2) {
+        return json(erreurLiaison(e2), 400);
+      }
+    }
+    await admin().from("pronote_comptes").upsert({
+      famille_id: membre.famille_id, url: r.url, username: r.username, token: r.token, kind: r.kind,
+      device_uuid: deviceUUID, navigator_identifier: r.navigatorIdentifier, erreur: null,
+    });
+    // La liaison est faite : si la première synchro échoue, elle sera refaite par le planificateur.
+    try {
+      return json({ ok: true, ...(await synchroniser(membre.famille_id, session)) });
+    } catch (e) {
+      const msg = e instanceof Error ? `${e.name}: ${e.message}` : "erreur";
+      await admin().from("pronote_comptes").update({ erreur: msg.slice(0, 300) }).eq("famille_id", membre.famille_id);
+      return json({ ok: true, devoirs: 0, synchro: msg.slice(0, 200) });
     }
   }
 
