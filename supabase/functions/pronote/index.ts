@@ -39,7 +39,14 @@ function creerSession() {
       res = await fetch(r.url.href, { ...init, redirect: "follow" });
     }
     if (!res.ok) trace.push(`${res.status} ${r.url.host}${r.url.pathname}`);
-    return { status: res.status, content: await res.text(), headers: res.headers };
+    const content = await res.text();
+    if (/\/mobile\.\w+\.html$/.test(r.url.pathname)) {
+      // Page d'accueil Pronote : on note ce qu'elle contient vraiment, pour comprendre un refus.
+      const titre = content.match(/<title>([^<]{0,80})/i)?.[1]?.trim() ?? "";
+      const version = content.match(/PRONOTE[^<"]{0,25}/)?.[0] ?? "aucune";
+      trace.push(`page ${res.status} ${content.length}o titre="${titre}" version="${version}"`);
+    }
+    return { status: res.status, content, headers: res.headers };
   };
   return { session: pronote.createSessionHandle(fetcher as Parameters<typeof pronote.createSessionHandle>[0]), trace };
 }
