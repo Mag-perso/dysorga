@@ -1,8 +1,8 @@
-// Liaison et synchronisation Pronote (bibliothèque non officielle « pawnote »).
+// Liaison et synchronisation Pronote (bibliothèque non officielle « pawnote », version LTS compatible Pronote 2026).
 // - "lier" : le parent scanne le QR code de connexion mobile affiché par Pronote, avec son code PIN.
 // - "synchro" : récupère devoirs, notes, cours des profs et fin des cours de la semaine.
 // - "synchro-toutes" : appelé par le planificateur pour toutes les familles.
-import * as pronote from "npm:pawnote@1.6.2";
+import * as pronote from "npm:@blockshub/pawnote-lts@1.6.4";
 import forge from "npm:node-forge@1.3.1";
 import { admin, cors, estCron, json, maintenantParis, membreConnecte } from "../_shared/commun.ts";
 
