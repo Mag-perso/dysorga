@@ -46,4 +46,4 @@ cp .env.example .env.local   # remplir les valeurs
 npm run dev
 ```
 
-Pronote passe par la bibliothèque non officielle [pawnote](https://github.com/LiterateInk/Pawnote). Les jetons Pronote restent sur le serveur, dans une table que l'appli ne peut pas lire.
+Pronote passe par la bibliothèque non officielle [pawnote](https://github.com/LiterateInk/Pawnote), dans sa version maintenue [Pawnote-LTS](https://github.com/BlocksHub/Pawnote-LTS) qui suit Pronote 2026. Les jetons Pronote restent sur le serveur, dans une table que l'appli ne peut pas lire.
