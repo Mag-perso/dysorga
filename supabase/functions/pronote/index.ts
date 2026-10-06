@@ -3,6 +3,7 @@
 // - "synchro" : récupère devoirs, notes, cours des profs et fin des cours de la semaine.
 // - "synchro-toutes" : appelé par le planificateur pour toutes les familles.
 import * as pronote from "npm:pawnote@1.6.2";
+import forge from "npm:node-forge@1.3.1";
 import { admin, cors, estCron, json, maintenantParis, membreConnecte } from "../_shared/commun.ts";
 
 const MATIERES: Array<[RegExp, string]> = [
@@ -47,6 +48,16 @@ function creerSession() {
       const titre = content.match(/<title>([^<]{0,80})/i)?.[1]?.trim() ?? "";
       const version = content.match(/PRONOTE[^<"]{0,25}/)?.[0] ?? "aucune";
       trace.push(`page ${res.status} ${content.length}o titre="${titre}" version="${version}"`);
+    } else if (r.url.pathname.includes("/appelfonction/")) {
+      // Réponses de Pronote : seulement le nom de la fonction et les noms des champs, jamais leur valeur.
+      try {
+        const j = JSON.parse(content), d = j.dataSec?.data ?? j.dataSec ?? {};
+        const champs = typeof d === "object" ? Object.keys(d).slice(0, 12).join(",") : `texte ${String(d).length}c`;
+        const extra = typeof d?.challenge === "string" ? ` challenge=${d.challenge.length}c` : typeof d?.Acces === "number" ? ` Acces=${d.Acces}` : "";
+        trace.push(`${j.id ?? "?"} ${res.status} [${champs}]${extra}${j.Erreur ? " Erreur=" + (j.Erreur.Titre ?? "") : ""}`);
+      } catch {
+        trace.push(`appel ${res.status} non-JSON ${content.length}o`);
+      }
     }
     return { status: res.status, content, headers: res.headers };
   };
@@ -128,13 +139,32 @@ async function synchroniser(famille: string, session: pronote.SessionHandle) {
   return { devoirs: devoirs.length, documents: docs.length };
 }
 
+// Le QR code contient l'identifiant et le jeton chiffrés avec le code à 4 chiffres.
+// pawnote ne vérifie pas le déchiffrement : un mauvais code donne du charabia, puis un refus « QR expiré ».
+// Ici on vérifie le bourrage AES : un code faux est reconnu à coup presque sûr.
+function codeQrCorrect(qr: { login?: string; jeton?: string }, pin: string) {
+  const lire = (hex: string) => {
+    const d = forge.cipher.createDecipher("AES-CBC", forge.md.md5.create().update(pin).digest());
+    d.start({ iv: forge.util.createBuffer().fillWithByte(0, 16) });
+    d.update(forge.util.createBuffer(forge.util.hexToBytes(hex)));
+    if (!d.finish()) return null;
+    try { return forge.util.decodeUtf8(d.output.bytes()); } catch { return null; }
+  };
+  try {
+    const login = lire(String(qr.login ?? "")), jeton = lire(String(qr.jeton ?? ""));
+    return !!login && !!jeton && !/[\x00-\x1f]/.test(login);
+  } catch {
+    return false;
+  }
+}
+
 function erreurLiaison(e: unknown, trace: string[] = [], url = "") {
   const nom = e instanceof Error ? e.name : "";
   const code = nom === "BadCredentialsError" ? "qr_expire" : nom === "AccountDisabledError" ? "compte_desactive"
     : nom === "SuspendedIPError" || nom === "RateLimitedError" ? "trop_essais" : "liaison_impossible";
   const quoi = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
   const ou = url ? ` | ${String(url).split("?")[0]}` : "";
-  return { erreur: code, detail: `${quoi}${ou}${trace.length ? " | " + trace.join(" ; ") : ""}`.slice(0, 400) };
+  return { erreur: code, detail: `${quoi}${ou}${trace.length ? " | " + trace.join(" ; ") : ""}`.slice(0, 700) };
 }
 
 async function synchroFamille(famille: string) {
@@ -167,6 +197,7 @@ Deno.serve(async (req) => {
   if (p.action === "lier") {
     if (membre.role !== "parent") return json({ erreur: "reserve_parent" }, 403);
     if (!p.qr?.jeton || !p.qr?.url || !/^\d{4}$/.test(String(p.pin ?? ""))) return json({ erreur: "qr_invalide" }, 400);
+    if (!codeQrCorrect(p.qr, String(p.pin))) return json({ erreur: "pin_faux" }, 400);
     const deviceUUID = crypto.randomUUID();
     const { session, trace } = creerSession();
     let r: pronote.RefreshInformation;

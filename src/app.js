@@ -576,7 +576,8 @@ function lierPronote(txt){var pin=ui.pnPin;
 function msgPronote(e){var c=e&&e.erreur,refais=" Génère un nouveau QR code et réessaie.";
   if(c==="pin_securite"){ui.pnSecuDemande=true;return "Le collège demande ton code de sécurité Pronote. Écris-le dans la nouvelle case."+refais;}
   if(c==="pin_securite_faux"){ui.pnSecuDemande=true;return "Le code de sécurité Pronote n'est pas le bon."+refais;}
-  if(c==="qr_expire")return "Le code à 4 chiffres ne correspond pas au QR code, ou le QR code a expiré. Écris ici exactement le même code que sur Pronote."+refais;
+  if(c==="pin_faux")return "Le code à 4 chiffres n'est pas celui choisi sur Pronote pour ce QR code. Génère un nouveau QR code et tape bien le même code ici.";
+  if(c==="qr_expire")return "Ton code à 4 chiffres est bon, mais Pronote a refusé le QR code."+refais+(e.detail?" (Détail pour Claude : "+e.detail+")":"");
   if(c==="premiere_connexion")return "Pronote demande d'abord de régler la sécurité du compte. Connecte-toi une fois sur le site Pronote et suis ce qu'il demande, puis réessaie.";
   if(c==="trop_essais")return "Pronote a bloqué les essais pour un moment. Attends une heure avant de réessayer.";
   if(c==="compte_desactive")return "Ce compte Pronote est désactivé. Vérifie avec le collège.";
