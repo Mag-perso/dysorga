@@ -2,7 +2,7 @@
 import "./styles.css";
 import { supa, utilisateur, connexionParent, inscriptionParent, connexionEnfant, deconnexion, monProfil, toutCharger, ecouter, creerStore,
   demander, pronoteLier, pronoteSynchro, pronoteStatut, creerCompteEnfant, activerAlertes, alertesActives } from "./api.js";
-import { ouvrirCamera } from "./camera.js";
+import { ouvrirCamera, lireQrImage } from "./camera.js";
 
 var MATIERES=[
   {k:"Français",c:"var(--m-fr)"},{k:"Maths",c:"var(--m-ma)"},{k:"Histoire-Géo",c:"var(--m-hg)"},
@@ -422,12 +422,13 @@ function pronoteCard(){
       '<button class="btn line" data-act="pronote-relier">Relier à nouveau</button></div>';
   }else{
     h+='<p>Les devoirs, les notes, les cours des profs et l\'emploi du temps arriveront tout seuls.</p>'+
-      '<ol class="etapes"><li>Sur un ordinateur, ouvre le Pronote d\'Ethan (par Paris Classe Numérique).</li>'+
-      '<li>En haut de la page, clique sur l\'icône du <b>QR code</b>.</li>'+
+      '<ol class="etapes"><li>Ouvre le Pronote d\'Ethan (par Paris Classe Numérique), sur un ordinateur ou sur ce téléphone.</li>'+
+      '<li>En haut de la page, touche l\'icône du <b>QR code</b>.</li>'+
       '<li>Choisis un code à 4 chiffres. Un QR code s\'affiche.</li>'+
-      '<li>Écris ce code ici, puis scanne le QR code avec ce téléphone.</li></ol>'+
+      '<li>Écris ce code ici. Sur un ordinateur, scanne le QR code. Sur ce téléphone, fais une capture d\'écran du QR code, puis reviens ici et choisis-la.</li></ol>'+
       '<div><label class="lbl" for="pnPin">Le code à 4 chiffres</label><input type="text" inputmode="numeric" maxlength="4" id="pnPin" value="'+esc(ui.pnPin||"")+'" placeholder="1234"></div>'+
-      '<button class="btn" data-act="pronote-scan"'+(ui.pronoteBusy?" disabled":"")+'>'+ICON.photo+(ui.pronoteBusy?"Liaison en cours…":"Scanner le QR code")+'</button>';
+      '<button class="btn" data-act="pronote-scan"'+(ui.pronoteBusy?" disabled":"")+'>'+ICON.photo+(ui.pronoteBusy?"Liaison en cours…":"Scanner le QR code")+'</button>'+
+      '<label class="btn line" for="pnQrImg">Choisir la capture d\'écran</label><input type="file" id="pnQrImg" accept="image/*" hidden>';
   }
   if(ui.pronoteMsg)h+='<p class="'+(ui.pronoteOk?"note":"err")+'">'+esc(ui.pronoteMsg)+'</p>';
   return h+'</div>';
@@ -544,15 +545,8 @@ document.addEventListener("click",function(e){
   else if(a==="alertes"){ui.alertesErr="";activerAlertes().then(function(){ui.alertes=true;render();}).catch(function(e){
     ui.alertesErr=e&&e.code==="refuse"?"Les notifications sont bloquées. Autorise-les pour DysOrga dans les réglages du téléphone.":"Ce téléphone ne permet pas les alertes. Installe DysOrga sur l'écran d'accueil avec Chrome.";render();});}
   else if(a==="pronote-relier"){ui.pronoteRelier=true;ui.pronoteMsg="";render();}
-  else if(a==="pronote-scan"){var pin=($("#pnPin").value||"").trim();ui.pnPin=pin;
-    if(!/^\d{4}$/.test(pin)){ui.pronoteOk=false;ui.pronoteMsg="Écris d'abord le code à 4 chiffres choisi sur Pronote.";render();return;}
-    ouvrirCamera("qr","Vise le QR code affiché par Pronote.").then(function(txt){
-      if(!txt)return;var qr;try{qr=JSON.parse(txt);}catch(_){}
-      if(!qr||!qr.jeton||!qr.url){ui.pronoteOk=false;ui.pronoteMsg="Ce n'est pas le QR code de Pronote. Réessaie.";render();return;}
-      ui.pronoteBusy=true;ui.pronoteMsg="";render();
-      pronoteLier(qr,pin).then(function(r){ui.pronoteBusy=false;ui.pronoteRelier=false;ui.pronoteOk=true;
-        ui.pronoteMsg="C'est relié ! "+(r.devoirs||0)+" devoir(s) récupéré(s).";rafraichirParent();recharger();})
-      .catch(function(){ui.pronoteBusy=false;ui.pronoteOk=false;ui.pronoteMsg="La liaison n'a pas marché. Le QR code ne dure que quelques minutes : génère-en un nouveau et réessaie.";render();});});}
+  else if(a==="pronote-scan"){if(!pinPronote())return;
+    ouvrirCamera("qr","Vise le QR code affiché par Pronote.").then(lierPronote);}
   else if(a==="pronote-synchro"){ui.pronoteBusy=true;ui.pronoteMsg="";render();
     pronoteSynchro().then(function(){ui.pronoteBusy=false;ui.pronoteOk=true;ui.pronoteMsg="À jour.";rafraichirParent();recharger();})
     .catch(function(){ui.pronoteBusy=false;ui.pronoteOk=false;ui.pronoteMsg="La mise à jour n'a pas marché. Réessaie plus tard.";rafraichirParent();});}
@@ -561,8 +555,22 @@ document.addEventListener("click",function(e){
   else if(a==="deconnexion"){deconnexion().then(function(){location.reload();});}
 });
 document.addEventListener("input",function(e){if(e.target.id==="mapSujet"||e.target.id==="quizSujet"){ui.prefill="";ui[e.target.id]=e.target.value;}if(e.target.id==="mapLecon")ui.mapLecon=e.target.value;});
-document.addEventListener("change",function(e){if(e.target.id==="fondFile"&&e.target.files&&e.target.files[0])setFond(e.target.files[0]);if(e.target.id==="mapImg"&&device==="parent"&&e.target.files&&e.target.files.length)addPhotos(e.target.files);});
+document.addEventListener("change",function(e){if(e.target.id==="fondFile"&&e.target.files&&e.target.files[0])setFond(e.target.files[0]);if(e.target.id==="mapImg"&&device==="parent"&&e.target.files&&e.target.files.length)addPhotos(e.target.files);
+  if(e.target.id==="pnQrImg"&&device==="parent"&&e.target.files&&e.target.files[0]){var f=e.target.files[0];e.target.value="";
+    if(!pinPronote())return;
+    lireQrImage(f).then(function(txt){if(txt)return lierPronote(txt);
+      ui.pronoteOk=false;ui.pronoteMsg="Je ne trouve pas de QR code sur cette image. Fais une capture où le QR code se voit en entier.";render();});}});
 
+function pinPronote(){var pin=($("#pnPin").value||"").trim();ui.pnPin=pin;
+  if(/^\d{4}$/.test(pin))return pin;
+  ui.pronoteOk=false;ui.pronoteMsg="Écris d'abord le code à 4 chiffres choisi sur Pronote.";render();return null;}
+function lierPronote(txt){var pin=ui.pnPin;
+      if(!txt)return;var qr;try{qr=JSON.parse(txt);}catch(_){}
+      if(!qr||!qr.jeton||!qr.url){ui.pronoteOk=false;ui.pronoteMsg="Ce n'est pas le QR code de Pronote. Réessaie.";render();return;}
+      ui.pronoteBusy=true;ui.pronoteMsg="";render();
+      pronoteLier(qr,pin).then(function(r){ui.pronoteBusy=false;ui.pronoteRelier=false;ui.pronoteOk=true;
+        ui.pronoteMsg="C'est relié ! "+(r.devoirs||0)+" devoir(s) récupéré(s).";rafraichirParent();recharger();})
+      .catch(function(){ui.pronoteBusy=false;ui.pronoteOk=false;ui.pronoteMsg="La liaison n'a pas marché. Le QR code ne dure que quelques minutes : génère-en un nouveau et réessaie.";render();});}
 function keepNote(){var v=$("#noteVal"),s2=$("#noteSur"),c=$("#noteChap");if(v)ui.noteVal=v.value;if(s2)ui.noteSur=s2.value;if(c)ui.noteChap=c.value;}
 function markConnexion(){
   if(device!=="enfant")return;

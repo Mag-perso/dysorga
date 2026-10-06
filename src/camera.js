@@ -41,13 +41,25 @@ export function ouvrirCamera(mode = "photo", consigne = "") {
       cv.toBlob((blob) => fermer(blob), "image/jpeg", 0.9);
     });
 
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } }, audio: false })
-      .then((s) => {
-        flux = s;
-        video.srcObject = s;
-        if (mode === "qr") lireQr();
-      })
-      .catch(() => erreur("L'appareil photo ne s'ouvre pas. Vérifie que DysOrga a le droit de l'utiliser dans les réglages du téléphone."));
+    function demarrer() {
+      navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } }, audio: false })
+        .then((s) => {
+          if (fini) return s.getTracks().forEach((t) => t.stop());
+          flux = s;
+          video.srcObject = s;
+          if (mode === "qr") lireQr();
+        })
+        .catch(() => erreur("L'appareil photo ne s'ouvre pas. Vérifie que DysOrga a le droit de l'utiliser dans les réglages du téléphone."));
+    }
+    demarrer();
+    // Android coupe la caméra quand on passe dans une autre appli : on la rallume au retour.
+    function auRetour() {
+      if (fini) return document.removeEventListener("visibilitychange", auRetour);
+      if (document.hidden || flux?.getVideoTracks().some((t) => t.readyState === "live")) return;
+      cancelAnimationFrame(boucle);
+      demarrer();
+    }
+    document.addEventListener("visibilitychange", auRetour);
 
     async function lireQr() {
       const detecteur = "BarcodeDetector" in window ? new window.BarcodeDetector({ formats: ["qr_code"] }) : null;
@@ -71,4 +83,18 @@ export function ouvrirCamera(mode = "photo", consigne = "") {
       tour();
     }
   });
+}
+
+/** Lit un QR code sur une image (capture d'écran choisie par le parent). Renvoie le texte ou null. */
+export async function lireQrImage(fichier) {
+  const img = await createImageBitmap(fichier);
+  if ("BarcodeDetector" in window) {
+    const codes = await new window.BarcodeDetector({ formats: ["qr_code"] }).detect(img).catch(() => []);
+    if (codes[0]?.rawValue) return codes[0].rawValue;
+  }
+  const cv = document.createElement("canvas");
+  cv.width = img.width; cv.height = img.height;
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  return jsQR(ctx.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height)?.data ?? null;
 }
