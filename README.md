@@ -19,24 +19,21 @@ Appli de devoirs pour un élève dys (TDA, dyspraxie, dyscalculie, dysorthograph
 
 ## Mise en place (une seule fois)
 
-1. **Supabase** (gratuit) : créer un projet sur supabase.com, région Europe.
-   - *SQL Editor* : exécuter `supabase/migrations/0001_init.sql`.
-   - *Authentication > Sign In / Providers > Email* : désactiver « Confirm email », ou bien confirmer l'e-mail du parent à la première connexion.
-2. **Clés** :
-   - Générer les clés d'alerte avec `npx web-push generate-vapid-keys`.
-   - Créer une clé API sur console.anthropic.com **avec un plafond de dépense mensuel**.
-3. **Fonctions du serveur**, avec la CLI Supabase :
-   ```sh
-   supabase link --project-ref <ref>
-   supabase secrets set ANTHROPIC_API_KEY=... CRON_SECRET=<long texte au hasard> \
-     VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_CONTACT=mailto:<e-mail> PLAFOND_ASSISTANT_JOUR=60
-   supabase functions deploy assistant pronote rappels compte-enfant
-   ```
-4. **Planificateur** : dans `supabase/cron.sql`, remplacer l'adresse du projet et le `CRON_SECRET`, puis l'exécuter dans le *SQL Editor*. Il lance les rappels toutes les 5 minutes et la synchro Pronote toutes les heures, de 6h à 20h.
-5. **GitHub Pages** :
-   - *Settings > Pages > Source* : « GitHub Actions ».
-   - *Settings > Secrets and variables > Actions > Variables* : ajouter `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` et `VITE_VAPID_PUBLIC_KEY`.
-   - Chaque envoi sur `main` met l'appli en ligne à `https://<compte>.github.io/dysorga/`.
+1. **Supabase** (gratuit) : créer un projet sur supabase.com, région Paris.
+   - *Authentication > Sign In / Providers > Email* : désactiver « Confirm email ».
+   - *Account > Access Tokens* : créer un jeton d'accès.
+2. **Anthropic** : créer une clé API sur console.anthropic.com **avec un plafond de dépense mensuel**.
+3. **GitHub**, dans *Settings > Secrets and variables > Actions* :
+   - *Secrets* : `SUPABASE_ACCESS_TOKEN` (le jeton Supabase) et `ANTHROPIC_API_KEY`.
+   - *Variables* : `SUPABASE_PROJECT_REF`, l'identifiant du projet (la partie `abcd` de `https://abcd.supabase.co`).
+4. **GitHub Pages** : *Settings > Pages > Source* : « GitHub Actions ».
+5. **Mise en ligne automatique** : chaque envoi sur `main` (ou *Actions > Mise en ligne > Run workflow*) fait tout seul :
+   - Il crée les tables si la base est vide.
+   - Il génère les clés d'alerte (une seule fois).
+   - Il installe les fonctions du serveur.
+   - Il règle le planificateur : rappels toutes les 5 minutes, synchro Pronote toutes les heures de 8h à 22h.
+   - Il publie l'appli à `https://<compte>.github.io/dysorga/`.
+   - En option, la limite d'appels à l'assistant se règle avec `supabase secrets set PLAFOND_ASSISTANT_JOUR=60`.
 6. **Sur les téléphones** : ouvrir l'adresse dans Chrome, puis *menu ⋮ > Ajouter à l'écran d'accueil*.
    - Le parent crée son compte, relie Pronote, active les alertes et crée le compte de l'élève.
    - L'élève se connecte avec l'identifiant et le code à 6 chiffres affichés.
