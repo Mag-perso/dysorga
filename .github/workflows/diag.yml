@@ -1,16 +1,26 @@
 name: Diagnostic Pronote
+# Temporaire : n'affiche que des nombres et le message d'erreur de synchro (dépôt public, aucune donnée d'Ethan).
 on:
   push:
     branches: [diag-pronote-page]
 permissions:
   contents: read
 jobs:
-  sonde:
+  etat:
     runs-on: ubuntu-latest
+    env:
+      REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      - run: deno run -A --config deno.json sonde.ts
-        working-directory: diag
+      - name: État de la synchro
+        run: |
+          q="select (select count(*) from pronote_comptes) comptes,
+            (select max(derniere_synchro)::text from pronote_comptes) derniere_synchro,
+            (select left(coalesce(max(erreur),'aucune'),300) from pronote_comptes) erreur,
+            (select count(*) from devoirs where source='pronote') devoirs,
+            (select count(*) from devoirs where source='manuel') devoirs_manuels,
+            (select count(*) from notes where source='pronote') notes,
+            (select count(*) from documents) documents,
+            (select count(*) from emploi_du_temps) jours_edt"
+          jq -n --arg q "$q" '{query:$q}' | curl -sS -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d @- | jq .
