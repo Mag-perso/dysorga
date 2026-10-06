@@ -467,16 +467,23 @@ function vParent(){
    '<div class="card kpi"><span class="hint">Cartes mentales</span><span class="v">'+S.cartes.length+'</span><span class="hint">Tests faits : '+S.tests.length+'</span></div></div>';
   h+=alertesCard()+pronoteCard();
   h+='<div class="note"><b>Règles de l\'assistant :</b> il ne donne jamais la réponse d\'un exercice et ne fait pas le travail à la place d\'Ethan. Il refuse ce qui n\'est pas de la révision. L\'appli n\'a aucun lien vers internet et pas de discussion libre.</div>';
+  var aVenir=S.devoirs.filter(function(d){return d.pour>=dayKey();}).sort(function(a,b){return (a.pour||"").localeCompare(b.pour||"");});
+  if(aVenir.length)h+='<div class="section-title"><h2>Devoirs à venir</h2><span class="count">'+aVenir.filter(function(d){return !d.fait;}).length+' à faire</span></div><div class="card histo">'+aVenir.map(function(d){
+    return '<div><span>'+esc(d.matiere)+' · '+esc(d.texte.length>90?d.texte.slice(0,90)+"…":d.texte)+'<br><span class="hint">pour '+esc(fmtDay(d.pour))+'</span></span><span class="s">'+(d.fait?"Fait ✓":"À faire")+'</span></div>';}).join("")+'</div>';
   var notes=S.notes.slice().sort(function(a,b){return (b.cree||"").localeCompare(a.cree||"");}).slice(0,6);
   if(notes.length)h+='<div class="section-title"><h2>Dernières notes</h2></div><div class="card histo">'+notes.map(function(x){
     return '<div><span>'+esc(x.matiere)+(x.chapitre?' · '+esc(x.chapitre):'')+'<br><span class="hint">'+esc(fmtWhen(x.cree))+'</span></span><span class="s"><span class="niveau '+(auDessus(x)?"n3":"n2")+'" style="padding:2px 10px">'+esc(String(x.note).replace(".",","))+' / '+x.sur+'</span></span></div>';}).join("")+'</div>';
   if(tests.length)h+='<div class="section-title"><h2>Résultats des mini-tests</h2></div><div class="card histo">'+tests.map(function(t){
     var n=niveau(t.score,t.total);return '<div><span>'+esc(t.sujet)+(t.exemple?'<span class="ex">exemple</span>':'')+'<br><span class="hint">'+esc(fmtWhen(t.cree))+'</span></span><span class="s"><span class="niveau '+n[0]+'" style="padding:2px 10px">'+t.score+' / '+t.total+'</span></span></div>';}).join("")+'</div>';
   h+=addForm();
-  var pl=S.reglages.planning||{};
-  h+='<div class="card"><h2>Planning et rappels</h2><p class="hint">Quand Pronote est relié, l\'emploi du temps est lu tout seul. Sinon, indique l\'heure de fin des cours chaque jour (laisse vide s\'il n\'a pas cours). Tu reçois un rappel 30 min après s\'il n\'a pas commencé, puis un autre 30 min plus tard.</p>'+
-   '<div class="histo">'+JOURS.map(function(j){return '<div style="align-items:center"><label for="pl'+j[0]+'">'+j[1]+'</label><input type="time" id="pl'+j[0]+'" value="'+esc(pl[j[0]]||"")+'" style="max-width:150px"></div>';}).join("")+'</div>'+
-   '<button class="btn" data-act="plan-save">Enregistrer le planning</button></div>';
+  var pl=S.reglages.planning||{},edt=S.edt.slice().sort(function(a,b){return a.jour.localeCompare(b.jour);});
+  var saisie='<div class="histo">'+JOURS.map(function(j){return '<div style="align-items:center"><label for="pl'+j[0]+'">'+j[1]+'</label><input type="time" id="pl'+j[0]+'" value="'+esc(pl[j[0]]||"")+'" style="max-width:150px"></div>';}).join("")+'</div>'+
+   '<button class="btn" data-act="plan-save">Enregistrer le planning</button>';
+  h+='<div class="card"><h2>Planning et rappels</h2>'+(edt.length
+   ?'<p class="hint">Fin des cours lue dans Pronote. Tu reçois un rappel 30 min après s\'il n\'a pas commencé, puis un autre 30 min plus tard.</p>'+
+    '<div class="histo">'+edt.map(function(e){var t=fmtDay(e.jour);return '<div><span>'+esc(t.charAt(0).toUpperCase()+t.slice(1))+'</span><span class="s">'+esc(e.fin.slice(0,5).replace(":","h"))+'</span></div>';}).join("")+'</div>'+
+    '<details style="margin-top:10px"><summary class="hint">Horaires de secours (si Pronote ne répond plus)</summary>'+saisie+'</details>'
+   :'<p class="hint">Quand Pronote est relié, l\'emploi du temps est lu tout seul. Sinon, indique l\'heure de fin des cours chaque jour (laisse vide s\'il n\'a pas cours). Tu reçois un rappel 30 min après s\'il n\'a pas commencé, puis un autre 30 min plus tard.</p>'+saisie)+'</div>';
   h+='<div class="card"><h2>Réglages</h2><div><label class="lbl" for="rPrenom">Prénom</label><input type="text" id="rPrenom" value="'+esc(S.reglages.prenom||"")+'"></div>'+
    '<div><label class="lbl" for="rClasse">Classe</label><select id="rClasse">'+["","6e","5e","4e","3e","CM2","Seconde"].map(function(c){return '<option value="'+c+'"'+(S.reglages.classe===c?" selected":"")+'>'+(c||"Choisir")+'</option>';}).join("")+'</select></div>'+
    '<p class="hint">La classe sert à adapter le niveau des cartes et des tests.</p><button class="btn" data-act="reg-save">Enregistrer</button>'+
