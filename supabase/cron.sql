@@ -1,11 +1,19 @@
--- À lancer une seule fois dans l'éditeur SQL de Supabase, après avoir déployé les fonctions.
--- Remplace les deux valeurs entre < > (voir README, étape « Planifier les rappels »).
+-- Planificateur : lancé automatiquement par la mise en ligne (.github/workflows/deploy.yml).
+-- __URL__ et __SECRET__ sont remplacés à ce moment-là ; le secret change à chaque mise en ligne.
 
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
-select vault.create_secret('<URL DU PROJET, ex. https://abcd.supabase.co>', 'projet_url');
-select vault.create_secret('<CLE SECRETE DES FONCTIONS : la valeur de CRON_SECRET>', 'cron_secret');
+do $$
+declare i uuid;
+begin
+  select id into i from vault.secrets where name = 'projet_url';
+  if i is null then perform vault.create_secret('__URL__', 'projet_url');
+  else perform vault.update_secret(i, '__URL__'); end if;
+  select id into i from vault.secrets where name = 'cron_secret';
+  if i is null then perform vault.create_secret('__SECRET__', 'cron_secret');
+  else perform vault.update_secret(i, '__SECRET__'); end if;
+end $$;
 
 -- Rappels au parent : toutes les 5 minutes.
 select cron.schedule('dysorga-rappels', '*/5 * * * *', $$

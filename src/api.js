@@ -164,13 +164,19 @@ function cleVapid(b64) {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
 
+async function clePublique() {
+  const { data, error } = await supa.functions.invoke("config");
+  if (error || !data?.vapid) throw { code: "non_supporte" };
+  return data.vapid;
+}
+
 export async function activerAlertes() {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw { code: "non_supporte" };
   const perm = await Notification.requestPermission();
   if (perm !== "granted") throw { code: "refuse" };
   const reg = await navigator.serviceWorker.ready;
   const sub = (await reg.pushManager.getSubscription()) ??
-    (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: cleVapid(import.meta.env.VITE_VAPID_PUBLIC_KEY) }));
+    (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: cleVapid(await clePublique()) }));
   const j = sub.toJSON();
   const { error } = await supa.from("push_abonnements").upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }, { onConflict: "endpoint" });
   if (error) throw error;
