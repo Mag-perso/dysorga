@@ -25,6 +25,25 @@ function texte(html?: string): string {
     .replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// Requêtes vers Pronote : on suit les redirections de la page d'accueil (certains serveurs
+// en renvoient une que pawnote ne suit pas) et on garde une trace pour expliquer un échec.
+type Requete = { url: URL; method?: string; headers?: Record<string, string>; content?: string; redirect?: "follow" | "manual" };
+function creerSession() {
+  const trace: string[] = [];
+  const fetcher = async (r: Requete) => {
+    const init = { headers: r.headers ?? {}, method: r.method ?? "GET", body: r.content };
+    let res = await fetch(r.url.href, { ...init, redirect: r.redirect ?? "follow" });
+    if (r.redirect === "manual" && init.method === "GET" && (res.status === 0 || (res.status >= 300 && res.status < 400))) {
+      const vers = res.headers.get("location");
+      trace.push(`${res.status} ${r.url.host}${r.url.pathname} -> ${vers ? new URL(vers, r.url).href.split("?")[0] : "?"}`);
+      res = await fetch(r.url.href, { ...init, redirect: "follow" });
+    }
+    if (!res.ok) trace.push(`${res.status} ${r.url.host}${r.url.pathname}`);
+    return { status: res.status, content: await res.text(), headers: res.headers };
+  };
+  return { session: pronote.createSessionHandle(fetcher as Parameters<typeof pronote.createSessionHandle>[0]), trace };
+}
+
 const jourParis = (d: Date) => maintenantParis(d).jour;
 const heureParis = (d: Date) => maintenantParis(d).heure;
 
@@ -32,7 +51,7 @@ async function connecter(famille: string) {
   const db = admin();
   const { data: c } = await db.from("pronote_comptes").select("*").eq("famille_id", famille).maybeSingle();
   if (!c) throw new Error("non_lie");
-  const session = pronote.createSessionHandle();
+  const { session } = creerSession();
   const refresh = await pronote.loginToken(session, {
     url: c.url, kind: c.kind, username: c.username, token: c.token,
     deviceUUID: c.device_uuid, navigatorIdentifier: c.navigator_identifier ?? undefined,
@@ -100,11 +119,13 @@ async function synchroniser(famille: string, session: pronote.SessionHandle) {
   return { devoirs: devoirs.length, documents: docs.length };
 }
 
-function erreurLiaison(e: unknown) {
+function erreurLiaison(e: unknown, trace: string[] = [], url = "") {
   const nom = e instanceof Error ? e.name : "";
   const code = nom === "BadCredentialsError" ? "qr_expire" : nom === "AccountDisabledError" ? "compte_desactive"
     : nom === "SuspendedIPError" || nom === "RateLimitedError" ? "trop_essais" : "liaison_impossible";
-  return { erreur: code, detail: e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 200) : String(e).slice(0, 200) };
+  const quoi = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+  const ou = url ? ` | ${String(url).split("?")[0]}` : "";
+  return { erreur: code, detail: `${quoi}${ou}${trace.length ? " | " + trace.join(" ; ") : ""}`.slice(0, 400) };
 }
 
 async function synchroFamille(famille: string) {
@@ -138,12 +159,12 @@ Deno.serve(async (req) => {
     if (membre.role !== "parent") return json({ erreur: "reserve_parent" }, 403);
     if (!p.qr?.jeton || !p.qr?.url || !/^\d{4}$/.test(String(p.pin ?? ""))) return json({ erreur: "qr_invalide" }, 400);
     const deviceUUID = crypto.randomUUID();
-    const session = pronote.createSessionHandle();
+    const { session, trace } = creerSession();
     let r: pronote.RefreshInformation;
     try {
       r = await pronote.loginQrCode(session, { deviceUUID, pin: String(p.pin), qr: p.qr });
     } catch (e) {
-      if (!(e instanceof pronote.SecurityError)) return json(erreurLiaison(e), 400);
+      if (!(e instanceof pronote.SecurityError)) return json(erreurLiaison(e, trace, p.qr.url), 400);
       // Double authentification demandée par le collège : on déclare DysOrga comme appareil de confiance.
       const h = e.handle;
       if (h.shouldCustomPassword || h.shouldCustomDoubleAuth) return json({ erreur: "premiere_connexion" }, 400);
@@ -158,7 +179,7 @@ Deno.serve(async (req) => {
         });
         r = await pronote.finishLoginManually(session, h.context.authentication, h.context.identity, h.context.initialUsername);
       } catch (e2) {
-        return json(erreurLiaison(e2), 400);
+        return json(erreurLiaison(e2, trace, p.qr.url), 400);
       }
     }
     await admin().from("pronote_comptes").upsert({
