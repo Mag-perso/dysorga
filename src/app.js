@@ -427,6 +427,7 @@ function pronoteCard(){
       '<li>Choisis un code à 4 chiffres. Un QR code s\'affiche.</li>'+
       '<li>Écris ce code ici. Sur un ordinateur, scanne le QR code. Sur ce téléphone, fais une capture d\'écran du QR code, puis reviens ici et choisis-la.</li></ol>'+
       '<div><label class="lbl" for="pnPin">Le code à 4 chiffres</label><input type="text" inputmode="numeric" maxlength="4" id="pnPin" value="'+esc(ui.pnPin||"")+'" placeholder="1234"></div>'+
+      (ui.pnSecuDemande?'<div><label class="lbl" for="pnSecu">Ton code de sécurité Pronote (celui de la double authentification)</label><input type="text" inputmode="numeric" maxlength="4" id="pnSecu" value="'+esc(ui.pnSecu||"")+'" placeholder="4 chiffres"></div>':'')+
       '<button class="btn" data-act="pronote-scan"'+(ui.pronoteBusy?" disabled":"")+'>'+ICON.photo+(ui.pronoteBusy?"Liaison en cours…":"Scanner le QR code")+'</button>'+
       '<label class="btn line" for="pnQrImg">Choisir la capture d\'écran</label><input type="file" id="pnQrImg" accept="image/*" hidden>';
   }
@@ -568,9 +569,18 @@ function lierPronote(txt){var pin=ui.pnPin;
       if(!txt)return;var qr;try{qr=JSON.parse(txt);}catch(_){}
       if(!qr||!qr.jeton||!qr.url){ui.pronoteOk=false;ui.pronoteMsg="Ce n'est pas le QR code de Pronote. Réessaie.";render();return;}
       ui.pronoteBusy=true;ui.pronoteMsg="";render();
-      pronoteLier(qr,pin).then(function(r){ui.pronoteBusy=false;ui.pronoteRelier=false;ui.pronoteOk=true;
-        ui.pronoteMsg="C'est relié ! "+(r.devoirs||0)+" devoir(s) récupéré(s).";rafraichirParent();recharger();})
-      .catch(function(){ui.pronoteBusy=false;ui.pronoteOk=false;ui.pronoteMsg="La liaison n'a pas marché. Le QR code ne dure que quelques minutes : génère-en un nouveau et réessaie.";render();});}
+      var secu=$("#pnSecu");if(secu)ui.pnSecu=secu.value.trim();
+      pronoteLier(qr,pin,ui.pnSecu||undefined).then(function(r){ui.pronoteBusy=false;ui.pronoteRelier=false;ui.pronoteOk=true;ui.pnSecuDemande=false;
+        ui.pronoteMsg=r.synchro?"C'est relié ! Les devoirs arriveront à la prochaine mise à jour.":"C'est relié ! "+(r.devoirs||0)+" devoir(s) récupéré(s).";rafraichirParent();recharger();})
+      .catch(function(e){ui.pronoteBusy=false;ui.pronoteOk=false;ui.pronoteMsg=msgPronote(e);render();});}
+function msgPronote(e){var c=e&&e.erreur,refais=" Génère un nouveau QR code et réessaie.";
+  if(c==="pin_securite"){ui.pnSecuDemande=true;return "Le collège demande ton code de sécurité Pronote. Écris-le dans la nouvelle case."+refais;}
+  if(c==="pin_securite_faux"){ui.pnSecuDemande=true;return "Le code de sécurité Pronote n'est pas le bon."+refais;}
+  if(c==="qr_expire")return "Le code à 4 chiffres ne correspond pas au QR code, ou le QR code a expiré. Écris ici exactement le même code que sur Pronote."+refais;
+  if(c==="premiere_connexion")return "Pronote demande d'abord de régler la sécurité du compte. Connecte-toi une fois sur le site Pronote et suis ce qu'il demande, puis réessaie.";
+  if(c==="trop_essais")return "Pronote a bloqué les essais pour un moment. Attends une heure avant de réessayer.";
+  if(c==="compte_desactive")return "Ce compte Pronote est désactivé. Vérifie avec le collège.";
+  return "La liaison n'a pas marché."+refais+(e&&e.detail?" (Détail pour Claude : "+e.detail+")":"");}
 function keepNote(){var v=$("#noteVal"),s2=$("#noteSur"),c=$("#noteChap");if(v)ui.noteVal=v.value;if(s2)ui.noteSur=s2.value;if(c)ui.noteChap=c.value;}
 function markConnexion(){
   if(device!=="enfant")return;

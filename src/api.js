@@ -135,9 +135,13 @@ export async function demander(kind, infos, photos = []) {
 }
 
 /* ---------- Pronote ---------- */
-export async function pronoteLier(qr, pin) {
-  const { data, error } = await supa.functions.invoke("pronote", { body: { action: "lier", qr, pin } });
-  if (error) throw error;
+export async function pronoteLier(qr, pin, pinSecurite) {
+  const { data, error } = await supa.functions.invoke("pronote", { body: { action: "lier", qr, pin, pinSecurite } });
+  if (error) {
+    let info = { erreur: "liaison_impossible" };
+    try { info = await error.context.json(); } catch { /* pas de détail */ }
+    throw info;
+  }
   return data;
 }
 export async function pronoteSynchro() {
