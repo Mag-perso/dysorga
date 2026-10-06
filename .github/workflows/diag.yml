@@ -14,13 +14,9 @@ jobs:
     steps:
       - name: État de la synchro
         run: |
-          q="select (select count(*) from pronote_comptes) comptes,
-            (select max(derniere_synchro)::text from pronote_comptes) derniere_synchro,
-            (select left(coalesce(max(erreur),'aucune'),300) from pronote_comptes) erreur,
-            (select count(*) from devoirs where source='pronote') devoirs,
-            (select count(*) from devoirs where source='manuel') devoirs_manuels,
-            (select count(*) from notes where source='pronote') notes,
-            (select count(*) from documents) documents,
-            (select count(*) from emploi_du_temps) jours_edt"
+          q="select (select count(*) from devoirs where source='pronote' and fait) devoirs_faits,
+            (select count(*) from devoirs where source='pronote' and pour >= (now() at time zone 'Europe/Paris')::date) devoirs_a_venir,
+            (select min(pour)::text||' -> '||max(pour)::text from devoirs where source='pronote') dates_devoirs,
+            (select string_agg(jour::text||' '||fin::text, ', ' order by jour) from emploi_du_temps) edt"
           jq -n --arg q "$q" '{query:$q}' | curl -sS -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d @- | jq .
