@@ -15,4 +15,6 @@ jobs:
           echo "== taille"; wc -c p.html
           echo "== titre"; grep -o "<title>[^<]*" p.html || true
           echo "== version"; grep -o "PRONOTE[^<\"]\{0,25\}" p.html | head -5 || true
-          echo "== début"; head -c 1500 p.html
+          echo "== autour de la version"; grep -o ".\{0,120\}PRONOTE 20[0-9][0-9]\.[0-9.]*.\{0,80\}" p.html || true
+          echo "== Start"; grep -o ".\{0,60\}Start *(.\{0,400\}" p.html || true
+          echo "== fin"; tail -c 1600 p.html
