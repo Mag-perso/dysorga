@@ -2,19 +2,14 @@ name: Diagnostic Pronote
 on:
   push:
     branches: [diag-pronote-page]
+permissions:
+  contents: read
 jobs:
-  page:
+  sonde:
     runs-on: ubuntu-latest
     steps:
-      - name: Lire la page mobile du collège
-        run: |
-          U="https://0752957g.index-education.net/pronote/mobile.eleve.html?fd=1&login=true"
-          curl -sS -m 30 -D h.txt -o p.html -b "appliMobile=1" \
-            -A "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36" "$U" || true
-          echo "== en-têtes"; cat h.txt
-          echo "== taille"; wc -c p.html
-          echo "== titre"; grep -o "<title>[^<]*" p.html || true
-          echo "== version"; grep -o "PRONOTE[^<\"]\{0,25\}" p.html | head -5 || true
-          echo "== autour de la version"; grep -o ".\{0,120\}PRONOTE 20[0-9][0-9]\.[0-9.]*.\{0,80\}" p.html || true
-          echo "== Start"; grep -o ".\{0,60\}Start *(.\{0,400\}" p.html || true
-          echo "== fin"; tail -c 1600 p.html
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno run -A diag/sonde.ts
