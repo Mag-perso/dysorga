@@ -633,5 +633,13 @@ function demarrer(){
   }).catch(function(e){console.warn(e);showSync("Impossible de se connecter au serveur. Vérifie internet.");});
 }
 document.addEventListener("visibilitychange",function(){if(!document.hidden&&profil){recharger();if(device==="enfant")markConnexion();}});
-if("serviceWorker" in navigator)navigator.serviceWorker.register(import.meta.env.BASE_URL+"sw.js",{type:"module"}).catch(function(){});
+if("serviceWorker" in navigator){
+  // Nouvelle version publiée : on recharge l'appli dès qu'elle est prête (sauf pendant une photo ou une liaison).
+  var dejaControle=!!navigator.serviceWorker.controller,aRecharger=false;
+  var rechargerSiLibre=function(){if(!aRecharger||document.querySelector(".camera")||ui.pronoteBusy)return;location.reload();};
+  navigator.serviceWorker.addEventListener("controllerchange",function(){if(!dejaControle){dejaControle=true;return;}aRecharger=true;rechargerSiLibre();});
+  navigator.serviceWorker.register(import.meta.env.BASE_URL+"sw.js",{type:"module"}).then(function(reg){
+    document.addEventListener("visibilitychange",function(){if(document.hidden)return;reg.update().catch(function(){});rechargerSiLibre();});
+  }).catch(function(){});
+}
 demarrer();
