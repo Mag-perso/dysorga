@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1F5FBF">
+<title>DysOrga</title>
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap">
+</head>
+<body class="sans-nav">
+<div class="wrap" id="app">
+  <header class="top">
+    <div class="hello"><h1 id="hello">DysOrga</h1><span class="date" id="today"></span></div>
+    <div class="top-right"><button class="theme-btn" id="themeBtn" data-act="theme-open" hidden><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18c1 0 1.8-.8 1.8-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8zm-5.5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>Mon thème</button>
+    <div class="stars" title="Étoiles gagnées"><svg viewBox="0 0 24 24"><path d="M12 2l3 6.6 7.2.7-5.4 4.8 1.6 7.1L12 17.8 5.6 21.2l1.6-7.1L1.8 9.3 9 8.6z"/></svg><span id="starCount">0</span></div></div>
+  </header>
+  <div id="syncNote" class="note" hidden></div>
+  <div id="themePanel"></div>
+  <main id="view"></main>
+  <div class="modebar" id="modebar"></div>
+</div>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" data-tab="devoirs" aria-selected="true"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.5V8h4.5zM8 12v2h8v-2zm0 4v2h6v-2z"/></svg>Devoirs</button>
+  <button role="tab" data-tab="cartes" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6zM4 3a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zm16 0a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM4 16a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zm16 0a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM6 6.5l4.2 3.6-.9 1.1L5 7.6zm12 0l1 1.1-4.3 3.6-.9-1.1zM9.3 12.8l.9 1.1L6 17.5 5 16.4zm5.4 0l4.3 3.6-1 1.1-4.2-3.6z"/></svg>Cartes</button>
+  <button role="tab" data-tab="tests" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z"/></svg>Mini-tests</button>
+  <button role="tab" data-tab="notes" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M12 2l3 6.6 7.2.7-5.4 4.8 1.6 7.1L12 17.8 5.6 21.2l1.6-7.1L1.8 9.3 9 8.6z"/></svg>Notes</button>
+  <button role="tab" data-tab="parent" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-4 0-8 2-8 5v1h16v-1c0-3-4-5-8-5z"/></svg>Parent</button>
+</nav>
+<script type="module" src="/src/app.js"></script>
+</body>
+</html>
