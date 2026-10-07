@@ -4,7 +4,8 @@
 import Anthropic from "npm:@anthropic-ai/sdk@0.131.0";
 import { admin, cors, json, maintenantParis, membreConnecte } from "../_shared/commun.ts";
 
-const MODELE = "claude-opus-5-5";
+// Sonnet : réponses bien plus rapides, assez précis pour des cartes, des tests et des vérifications.
+const MODELE = "claude-sonnet-5-5";
 const PLAFOND_JOUR = Number(Deno.env.get("PLAFOND_ASSISTANT_JOUR") ?? "60");
 
 const client = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
@@ -65,6 +66,20 @@ const SCHEMAS: Record<string, Record<string, unknown>> = {
       },
     },
   },
+  verif: {
+    type: "object", additionalProperties: false,
+    required: ["statut", "message", "tout_bon", "bravo", "points"],
+    properties: {
+      statut: { type: "string", enum: ["ok", "refus", "recadrage"] },
+      message: MESSAGE,
+      tout_bon: { type: "boolean" },
+      bravo: { type: "string" },
+      points: {
+        type: "array",
+        items: { type: "object", additionalProperties: false, required: ["emoji", "texte"], properties: { emoji: { type: "string" }, texte: { type: "string" } } },
+      },
+    },
+  },
   bureau: {
     type: "object", additionalProperties: false,
     required: ["statut", "message", "bravo", "etapes", "parfait"],
@@ -95,6 +110,14 @@ function consigne(kind: string, p: Record<string, any>, nbImages: number, doc?: 
       (p.revision ? "\nC'est la révision d'un ancien chapitre : vise l'essentiel à retenir." : "") +
       `\nDu plus facile au plus difficile, comme une interrogation en classe. 3 choix par question, un seul juste ("bonne" = son numéro à partir de 0). Ce sont des questions de leçon, jamais les exercices du devoir. L'indice aide à trouver sans jamais dire la bonne réponse. L'explication, montrée seulement quand il a trouvé, dit pourquoi c'est juste en une phrase. Si le statut n'est pas "ok", laisse questions vide.`;
   }
+  if (kind === "verif") {
+    return `La photo montre le devoir qu'il vient de finir : « ${String(p.sujet ?? "").slice(0, 500)} ».` +
+      "\nVérifie s'il a fait tout ce qui est demandé, et repère les erreurs." +
+      "\nRègle absolue : tu ne donnes JAMAIS la bonne réponse, ni la correction, ni le résultat d'un calcul, ni le mot bien écrit. Pour chaque problème, dis seulement où regarder (numéro d'exercice, ligne) et une piste de méthode (relire la consigne, vérifier une retenue, refaire le calcul à part, vérifier l'accord du verbe)." +
+      "\nMaximum 3 points, du plus important au moins important, une phrase courte chacun, un emoji chacun. Il est dysorthographique : signale au plus une faute d'orthographe, seulement si elle change le sens." +
+      "\nCommence par un compliment sincère sur ce qui est réussi (bravo). Si tout semble complet et juste : tout_bon vrai et points vide." +
+      "\nSi la photo ne montre pas un devoir, ou si on ne peut pas le lire : statut \"recadrage\", tout_bon faux, points vide.";
+  }
   const quoi = p.type === "bureau"
     ? "La photo montre le bureau où il fait ses devoirs. Regarde ce qui gêne : objets qui distraient (jeux, jouets, console, télé), désordre, manque de place, affaires qui manquent (trousse, cahier du jour, agenda), lumière."
     : "La photo montre ses cahiers. Regarde l'organisation : feuilles pas collées ou volantes, pages mal rangées, titres et dates manquants, cahier abîmé.";
@@ -111,7 +134,7 @@ Deno.serve(async (req) => {
   const kind = String(p.kind ?? "");
   if (!SCHEMAS[kind]) return json({ erreur: "demande_inconnue" }, 400);
   const images: Image[] = Array.isArray(p.images) ? p.images.slice(0, 5) : [];
-  if ((kind === "bureau") && !images.length) return json({ erreur: "photo_manquante" }, 400);
+  if ((kind === "bureau" || kind === "verif") && !images.length) return json({ erreur: "photo_manquante" }, 400);
 
   const db = admin();
   const { jour } = maintenantParis();

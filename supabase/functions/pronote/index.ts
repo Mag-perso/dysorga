@@ -64,8 +64,18 @@ function creerSession() {
   return { session: pronote.createSessionHandle(fetcher as Parameters<typeof pronote.createSessionHandle>[0]), trace };
 }
 
+// pawnote fabrique ses dates avec l'heure de Pronote (heure de Paris) lue comme heure locale du serveur.
+// On relit donc l'heure locale telle quelle : la convertir en heure de Paris ajoutait 1 ou 2 heures.
+const deux = (n: number) => String(n).padStart(2, "0");
 const jourParis = (d: Date) => maintenantParis(d).jour;
-const heureParis = (d: Date) => maintenantParis(d).heure;
+const jourPronote = (d: Date) => `${d.getFullYear()}-${deux(d.getMonth() + 1)}-${deux(d.getDate())}`;
+const heurePronote = (d: Date) => `${deux(d.getHours())}:${deux(d.getMinutes())}`;
+
+// Pronote change les identifiants à chaque connexion : on repère chaque élément par son contenu.
+// Même calcul que supabase/migrations/0002_doublons_pronote.sql.
+const cle = (...parts: Array<string | number>) => forge.md.md5.create().update(forge.util.encodeUtf8(parts.join("|"))).digest().toHex();
+const cleDevoir = (a: pronote.Assignment) => cle(matiere(a.subject.name), jourPronote(a.deadline), texte(a.description) || "Travail à faire");
+const sansDoublon = <T extends { pronote_id: string }>(lignes: T[]) => [...new Map(lignes.map((l) => [l.pronote_id, l])).values()];
 
 async function connecter(famille: string) {
   const db = admin();
@@ -90,36 +100,57 @@ async function synchroniser(famille: string, session: pronote.SessionHandle) {
   const devoirs = await pronote.assignmentsFromIntervals(session, debut, fin);
   const { data: existants } = await db.from("devoirs").select("pronote_id, fait").eq("famille_id", famille).eq("source", "pronote");
   const faits = new Set((existants ?? []).filter((d) => d.fait).map((d) => d.pronote_id));
-  if (devoirs.length) {
-    await db.from("devoirs").upsert(devoirs.map((a) => ({
-      famille_id: famille, source: "pronote", pronote_id: a.id,
+  const lignesDevoirs = sansDoublon(devoirs.map((a) => {
+    const id = cleDevoir(a);
+    return {
+      famille_id: famille, source: "pronote", pronote_id: id,
       matiere: matiere(a.subject.name), texte: texte(a.description) || "Travail à faire",
-      pour: jourParis(a.deadline), fait: a.done || faits.has(a.id),
-    })), { onConflict: "famille_id,pronote_id" });
+      pour: jourPronote(a.deadline), fait: a.done || faits.has(id),
+    };
+  }));
+  if (lignesDevoirs.length) {
+    const { error } = await db.from("devoirs").upsert(lignesDevoirs, { onConflict: "famille_id,pronote_id" });
+    if (error) throw new Error(`devoirs: ${error.message}`);
+    // Devoir retiré ou modifié par le prof : l'ancienne version (pas encore faite) disparaît.
+    const garder = lignesDevoirs.map((l) => l.pronote_id);
+    await db.from("devoirs").delete().eq("famille_id", famille).eq("source", "pronote").eq("fait", false)
+      .gte("pour", jourParis(auj)).lt("pour", jourParis(fin)).not("pronote_id", "in", `(${garder.join(",")})`);
   }
 
   // Cours et documents des profs (3 dernières semaines).
   const ressources = await pronote.resourcesFromIntervals(session, new Date(auj.getTime() - 21 * 864e5), new Date(auj.getTime() + 864e5));
-  const docs = ressources.flatMap((r) => r.contents.map((c) => ({
-    famille_id: famille, pronote_id: `${r.id}:${c.id}`, matiere: matiere(r.subject.name),
-    titre: c.title || r.subject.name, contenu: texte(c.description),
-    fichiers: c.files.map((f) => ({ nom: f.name, lien: f.kind === pronote.AttachmentKind.Link })),
-    date: jourParis(r.startDate),
-  }))).filter((d) => d.contenu || d.fichiers.length);
-  if (docs.length) await db.from("documents").upsert(docs, { onConflict: "famille_id,pronote_id" });
+  const docs = sansDoublon(ressources.flatMap((r) => r.contents.map((c) => {
+    const d = {
+      famille_id: famille, matiere: matiere(r.subject.name),
+      titre: c.title || r.subject.name, contenu: texte(c.description),
+      fichiers: c.files.map((f) => ({ nom: f.name, lien: f.kind === pronote.AttachmentKind.Link })),
+      date: jourPronote(r.startDate),
+    };
+    return { ...d, pronote_id: cle(d.matiere, d.date, d.titre, d.contenu) };
+  })).filter((d) => d.contenu || d.fichiers.length));
+  if (docs.length) {
+    const { error } = await db.from("documents").upsert(docs, { onConflict: "famille_id,pronote_id" });
+    if (error) throw new Error(`documents: ${error.message}`);
+  }
 
   // Notes de la période en cours.
   const onglet = session.userResource.tabs.get(pronote.TabLocation.Grades);
   const periode = onglet?.defaultPeriod ?? onglet?.periods.find((p) => p.startDate <= auj && auj <= p.endDate);
   if (periode) {
     const apercu = await pronote.gradesOverview(session, periode);
-    const notes = apercu.grades
+    const notes = sansDoublon(apercu.grades
       .filter((g) => g.value.kind === pronote.GradeKind.Grade && g.outOf.kind === pronote.GradeKind.Grade)
-      .map((g) => ({
-        famille_id: famille, source: "pronote", pronote_id: g.id, matiere: matiere(g.subject.name),
-        note: g.value.points, sur: g.outOf.points, chapitre: g.comment ?? "", cree: g.date.toISOString(),
+      .map((g) => {
+        const m = matiere(g.subject.name), chapitre = g.comment ?? "";
+        return {
+          famille_id: famille, source: "pronote", pronote_id: cle(m, jourPronote(g.date), g.value.points, g.outOf.points, chapitre),
+          matiere: m, note: g.value.points, sur: g.outOf.points, chapitre, cree: `${jourPronote(g.date)}T00:00:00Z`,
+        };
       }));
-    if (notes.length) await db.from("notes").upsert(notes, { onConflict: "famille_id,pronote_id" });
+    if (notes.length) {
+      const { error } = await db.from("notes").upsert(notes, { onConflict: "famille_id,pronote_id" });
+      if (error) throw new Error(`notes: ${error.message}`);
+    }
   }
 
   // Fin des cours de chaque jour, pour les rappels.
@@ -128,7 +159,7 @@ async function synchroniser(famille: string, session: pronote.SessionHandle) {
   const finParJour = new Map<string, string>();
   for (const c of edt.classes) {
     if (c.is === "lesson" && c.canceled) continue;
-    const j = jourParis(c.endDate), h = heureParis(c.endDate);
+    const j = jourPronote(c.endDate), h = heurePronote(c.endDate);
     if (!finParJour.has(j) || h > finParJour.get(j)!) finParJour.set(j, h);
   }
   if (finParJour.size) {
@@ -233,6 +264,25 @@ Deno.serve(async (req) => {
       const msg = e instanceof Error ? `${e.name}: ${e.message}` : "erreur";
       await admin().from("pronote_comptes").update({ erreur: msg.slice(0, 300) }).eq("famille_id", membre.famille_id);
       return json({ ok: true, devoirs: 0, synchro: msg.slice(0, 200) });
+    }
+  }
+
+  if (p.action === "devoir-fait") {
+    // Ethan coche (ou décoche) un devoir Pronote dans DysOrga : on le coche aussi dans Pronote.
+    const db = admin();
+    const { data: d } = await db.from("devoirs").select("pronote_id, pour").eq("id", String(p.id ?? ""))
+      .eq("famille_id", membre.famille_id).eq("source", "pronote").maybeSingle();
+    if (!d) return json({ erreur: "devoir_inconnu" }, 404);
+    try {
+      const session = await connecter(membre.famille_id);
+      const jour = new Date(`${d.pour}T00:00:00`);
+      const liste = await pronote.assignmentsFromIntervals(session, new Date(jour.getTime() - 864e5), new Date(jour.getTime() + 864e5));
+      const a = liste.find((x) => cleDevoir(x) === d.pronote_id);
+      if (!a) return json({ erreur: "introuvable_pronote" }, 404);
+      await pronote.assignmentStatus(session, a.id, !!p.fait);
+      return json({ ok: true });
+    } catch (e) {
+      return json({ erreur: "pronote_injoignable", detail: e instanceof Error ? e.message : "" }, 502);
     }
   }
 

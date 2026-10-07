@@ -149,6 +149,11 @@ export async function pronoteSynchro() {
   if (error) throw error;
   return data;
 }
+/** Coche (ou décoche) le devoir dans Pronote aussi. Sans gravité si Pronote ne répond pas. */
+export async function pronoteDevoirFait(id, fait) {
+  const { error } = await supa.functions.invoke("pronote", { body: { action: "devoir-fait", id, fait } });
+  if (error) throw error;
+}
 export async function pronoteStatut() {
   const { data } = await supa.rpc("pronote_statut");
   return (data && data[0]) || null;
