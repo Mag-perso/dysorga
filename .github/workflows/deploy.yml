@@ -43,6 +43,8 @@ jobs:
           else
             echo "Tables déjà là"
           fi
+          # Corrections de données sans effet si déjà faites.
+          sql "$(cat supabase/migrations/0002_doublons_pronote.sql)" > /dev/null && echo "Doublons Pronote retirés"
       - name: Clés du serveur
         run: |
           if ! supabase secrets list --project-ref "$REF" | grep -q VAPID_PUBLIC_KEY; then

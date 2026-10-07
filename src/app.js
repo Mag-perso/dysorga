@@ -1,7 +1,7 @@
 // DysOrga : l'écran de l'appli (enfant et parent).
 import "./styles.css";
 import { supa, utilisateur, connexionParent, inscriptionParent, connexionEnfant, deconnexion, monProfil, toutCharger, ecouter, creerStore,
-  demander, pronoteLier, pronoteSynchro, pronoteStatut, creerCompteEnfant, activerAlertes, alertesActives } from "./api.js";
+  demander, pronoteLier, pronoteSynchro, pronoteStatut, pronoteDevoirFait, creerCompteEnfant, activerAlertes, alertesActives } from "./api.js";
 import { ouvrirCamera, lireQrImage } from "./camera.js";
 
 var MATIERES=[
@@ -27,7 +27,7 @@ function fmtWhen(iso){if(!iso)return "jamais";var d=new Date(iso);var k=dayKey(d
 
 /* ---------- voix ---------- */
 var canSpeak="speechSynthesis" in window;
-function speak(text){if(!canSpeak)return;try{speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(text);u.lang="fr-FR";u.rate=.9;
+function speak(text){if(!canSpeak)return;try{speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(text);u.lang="fr-FR";u.rate=1.1;
   var v=speechSynthesis.getVoices().filter(function(x){return /^fr/i.test(x.lang);})[0];if(v)u.voice=v;speechSynthesis.speak(u);}catch(e){}}
 function sayBtn(text,label){if(!canSpeak)return "";return '<button class="say" data-say="'+esc(text)+'" aria-label="'+esc(label||"Écouter")+'" title="Écouter">'+ICON.speak+'</button>';}
 document.addEventListener("click",function(e){var b=e.target.closest("[data-say]");if(b){e.preventDefault();speak(b.getAttribute("data-say"));}});
@@ -176,6 +176,36 @@ function orgPhoto(f){
     activite();
   }).catch(function(e){o.loading=false;o.err=errText(e);render();});
 }
+/* Devoir fini : l'assistant regarde la photo du travail. Il montre où regarder, jamais la réponse. */
+function verifCard(){
+  var v=ui.verif;if(!v||device!=="enfant")return "";
+  var h='<div class="card"><div class="row" style="justify-content:space-between"><h3>Mon devoir fini</h3><button class="btn small line" data-act="verif-close">Fermer</button></div>'+
+    '<p class="hint">'+esc(v.sujet)+'</p>';
+  if(v.loading)return h+'<div class="wait"><span class="dot"></span>Je regarde ton travail…</div></div>';
+  if(v.err)h+='<p class="err">'+esc(v.err)+'</p>';
+  if(v.recadrage)h+='<div class="card courage"><strong>On se reconcentre</strong><p>'+esc(v.recadrage)+'</p>'+sayBtn(v.recadrage,"Écouter")+'</div>';
+  if(v.res&&v.res.tout_bon)return h+'<div class="card bravo"><strong>Bravo !</strong><p>'+esc(v.res.bravo||"Tout a l'air complet.")+'</p>'+sayBtn(v.res.bravo||"Bravo","Écouter")+'</div></div>';
+  if(v.res){var pts=v.res.points||[];
+    h+=(v.res.bravo?'<p>'+esc(v.res.bravo)+'</p>':'')+'<p><strong>À revoir :</strong></p><div class="histo">'+pts.map(function(x){
+      return '<div style="align-items:center"><span>'+esc((x.emoji?x.emoji+" ":"")+x.texte)+'</span>'+sayBtn(x.texte,"Écouter")+'</div>';}).join("")+'</div>'+
+      '<button class="btn big" data-act="verif-cam" style="margin-top:12px">'+ICON.photo+'J\'ai corrigé, je reprends la photo</button>';
+    return h+'</div>';}
+  h+='<p>Bravo ! Montre-moi ton travail : je regarde si tout est fait et je te dis où relire.</p>'+
+    '<button class="btn big" data-act="verif-cam">'+ICON.photo+'Prendre mon devoir en photo</button>'+
+    '<button class="btn line" data-act="go-test" data-sujet="'+esc(v.sujet)+'" style="margin-top:8px">C\'est une leçon à apprendre : je me teste</button>';
+  return h+'</div>';
+}
+function verifPhoto(f){
+  var v=ui.verif;if(!v)return;v.loading=true;v.err="";v.recadrage="";render();
+  demander("verif",{sujet:v.sujet},[f]).then(function(r){
+    v.loading=false;
+    if(r.statut!=="ok"){v.res=null;v.recadrage=r.message||"Reprends la photo de ton devoir, bien à plat.";render();speak(v.recadrage);return;}
+    v.res=r;render();
+    var pts=(r.points||[]).map(function(x){return x.texte;});
+    speak(r.tout_bon||!pts.length?(r.bravo||"Bravo, tout a l'air bon !"):(r.bravo?r.bravo+" ":"")+"À revoir : "+pts.join(". "));
+    activite();
+  }).catch(function(e){v.loading=false;v.err=errText(e);render();});
+}
 function vDevoirs(){
   var demain=addDays(1);
   var todo=S.devoirs.filter(function(d){return !d.fait;}).sort(function(a,b){return (a.pour||"").localeCompare(b.pour||"");});
@@ -184,7 +214,7 @@ function vDevoirs(){
   var pourDemain=S.devoirs.filter(function(d){return d.pour===demain;});
   var h='';
   if(device==="enfant"&&!aCommence()&&todo.length)h+='<button class="btn big" data-act="commence">Je commence mes devoirs</button>';
-  h+=orgCard();
+  h+=verifCard()+orgCard();
   if(pourDemain.length&&proches.length===0)h+='<div class="card bravo"><strong>Bravo, tout est fini pour demain !</strong><p>Tu peux te reposer.</p></div>';
   h+='<div class="section-title"><h2>À faire pour demain</h2><span class="count">'+proches.length+' restant'+(proches.length>1?"s":"")+'</span></div>';
   h+=proches.length?proches.map(devoirCard).join(""):'<p class="hint">Rien pour demain.</p>';
@@ -196,13 +226,15 @@ function vDevoirs(){
 function toggleDevoir(id){
   var d=S.devoirs.filter(function(x){return x.id===id;})[0];if(!d)return;
   var fait=!d.fait;Store.upd("devoirs",id,{fait:fait,fait_le:fait?new Date().toISOString():null});
+  if(d.source==="pronote")pronoteDevoirFait(id,fait).catch(function(){});
+  if(fait&&device==="enfant")ui.verif={id:id,sujet:d.matiere+" : "+d.texte};
   if(fait&&device==="enfant"){
     var demain=addDays(1);
     var reste=S.devoirs.filter(function(x){return x.pour<=demain&&!x.fait&&x.id!==id;});
     var patch={derniere_activite:new Date().toISOString()};
     if(!reste.length)patch.devoirs_finis_le=new Date().toISOString();
     Store.setDoc("suivi",patch);
-    speak(reste.length?"Super ! Encore "+reste.length+" devoir"+(reste.length>1?"s":""):"Bravo, tout est fini pour demain !");
+    speak("Bravo ! Montre-moi ton travail en photo, je regarde si tout est bon.");
   }
 }
 
@@ -517,7 +549,9 @@ document.addEventListener("click",function(e){
     if(device==="enfant")Store.setDoc("suivi",{derniere_activite:new Date().toISOString()});
     render();window.scrollTo(0,0);speak(messageNote(obj));}
   else if(a==="go-carte"){tab="cartes";ui.map=null;ui.prefill=t.dataset.sujet;render();window.scrollTo(0,0);}
-  else if(a==="go-test"){tab="tests";ui.quiz=null;ui.prefill=t.dataset.sujet;render();window.scrollTo(0,0);}
+  else if(a==="verif-cam"){ouvrirCamera("photo","Prends ton devoir fini en photo, bien à plat.").then(function(b){if(b)verifPhoto(b);});}
+  else if(a==="verif-close"){ui.verif=null;render();}
+  else if(a==="go-test"){ui.verif=null;tab="tests";ui.quiz=null;ui.prefill=t.dataset.sujet;render();window.scrollTo(0,0);}
   else if(a==="photo-del"){var k=+t.dataset.i,p=ui.photos.splice(k,1)[0];if(p)try{URL.revokeObjectURL(p.url);}catch(_){}render();}
   else if(a==="map-make"){ui.prefill="";makeMap();}
   else if(a==="map-open"){ui.map=S.cartes.filter(function(c){return c.id===id;})[0]||null;render();window.scrollTo(0,0);}
