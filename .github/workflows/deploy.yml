@@ -43,8 +43,6 @@ jobs:
           else
             echo "Tables déjà là"
           fi
-          # Corrections de données sans effet si déjà faites.
-          sql "$(cat supabase/migrations/0002_doublons_pronote.sql)" > /dev/null && echo "Doublons Pronote retirés"
       - name: Clés du serveur
         run: |
           if ! supabase secrets list --project-ref "$REF" | grep -q VAPID_PUBLIC_KEY; then
@@ -64,6 +62,11 @@ jobs:
           for f in assistant pronote rappels compte-enfant config; do
             supabase functions deploy "$f" --project-ref "$REF" --no-verify-jwt --use-api
           done
+      - name: Corrections de données (sans effet si déjà faites)
+        run: |
+          # Après les fonctions : la nouvelle synchro repère déjà les éléments par leur contenu.
+          jq -n --arg q "$(cat supabase/migrations/0002_doublons_pronote.sql)" '{query:$q}' | curl -fsS -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d @- > /dev/null && echo "Doublons Pronote retirés"
       - name: Planificateur
         run: |
           q=$(sed -e "s|__URL__|https://$REF.supabase.co|g" -e "s|__SECRET__|$CRON_SECRET|g" supabase/cron.sql)
