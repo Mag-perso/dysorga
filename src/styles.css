@@ -160,3 +160,10 @@ ol.etapes li{line-height:1.5}
 .camera-erreur{color:#fff;background:var(--bad);padding:10px 14px;border-radius:12px;margin:0}
 .camera-boutons{display:grid;gap:10px;width:100%;max-width:480px}
 .camera .btn.line{background:#fff}
+
+/* Explications sur l'exercice */
+.aide{gap:10px}
+.bulle{padding:10px 14px;border-radius:16px;max-width:90%;line-height:1.45}
+.bulle.moi{align-self:flex-end;background:var(--bg);border:2px solid var(--line)}
+.bulle.elle{align-self:flex-start;background:var(--good-soft);display:flex;gap:8px;align-items:flex-start}
+.rapides{display:flex;flex-wrap:wrap;gap:6px}

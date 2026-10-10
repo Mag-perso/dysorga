@@ -6,6 +6,7 @@ Appli de devoirs pour un élève dys (TDA, dyspraxie, dyscalculie, dysorthograph
 - **Cartes mentales** : on prend la leçon en photo avec l'appareil photo de l'appli, ou on part d'un cours qu'un prof a déposé sur Pronote.
 - **Mini-tests** : ils portent sur ce qui est étudié en ce moment, et on peut aussi réviser les anciens chapitres.
 - **Notes** : un bravo au-dessus de la moyenne, un encouragement en dessous.
+- **Valider un devoir** : l'élève prend son travail fini en photo. Le devoir n'est coché que si l'assistant trouve que tout est fait et juste (pour une leçon : au moins 3/5 au mini-test). Sinon, il montre où regarder, et l'élève peut demander des explications sur l'exercice.
 - **Bureau et cahiers** : l'élève montre son bureau ou ses cahiers, et l'appli lui donne des consignes une étape à la fois.
 - **Thème** : rose, jaune, bleu, ou son fond d'écran. Il peut le changer 2 minutes par jour.
 - **Parent** : une alerte sur le téléphone 30 minutes après la fin des cours si les devoirs n'ont pas commencé, une deuxième 30 minutes plus tard, et un message quand tout est fini.
@@ -14,6 +15,7 @@ Appli de devoirs pour un élève dys (TDA, dyspraxie, dyscalculie, dysorthograph
 
 - L'assistant ne donne **jamais** la réponse. Il guide, et il refuse de faire le travail à la place de l'élève.
 - L'élève n'a aucun accès à internet : pas de liens, pas de discussion libre. Seul le serveur va chercher les données.
+- Les explications sur un exercice ne parlent que de cet exercice (8 questions au plus par vérification). L'assistant ne confirme jamais une réponse proposée et refuse tout autre sujet. Les liens éventuels sont retirés par le serveur.
 - Pas d'accès à la galerie de photos : seul l'appareil photo de l'appli est utilisé. Si la photo ne montre pas le cours, il est gentiment invité à se recentrer.
 - Pas de minuteur, et on ne lui demande jamais de ranger son téléphone.
 
