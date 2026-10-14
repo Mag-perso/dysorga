@@ -14,11 +14,9 @@ jobs:
     steps:
       - name: État de la synchro
         run: |
-          q="with g as (select matiere, pour from devoirs where pour >= current_date group by 1,2 having count(*) > 1),
-            x as (select d.*, dense_rank() over (order by d.matiere, d.pour) grp, lower(regexp_replace(d.texte, '[^a-zA-Z]', '', 'g')) l from devoirs d join g using (matiere, pour))
-            select json_agg(json_build_object('groupe', a.grp, 'cree_a', to_char(a.cree,'MM-DD HH24'), 'cree_b', to_char(b.cree,'MM-DD HH24'),
-              'lettres_identiques', a.l = b.l, 'a_contient_b', position(b.l in a.l) > 0, 'b_contient_a', position(a.l in b.l) > 0,
-              'debut20_identique', left(a.l,20) = left(b.l,20), 'fin20_identique', right(a.l,20) = right(b.l,20))) paires
-            from x a join x b on a.grp = b.grp and a.id < b.id"
+          q="select (select count(*) from devoirs) total, (select count(*) from familles) familles,
+            (select count(*) from (select 1 from devoirs group by famille_id, matiere, pour, texte having count(*) > 1) z) groupes_identiques,
+            (select count(*) from (select 1 from devoirs group by famille_id, matiere, lower(regexp_replace(texte, '[^a-zA-Z]', '', 'g')) having count(*) > 1) z) memes_textes_dates_differentes,
+            (select json_agg(json_build_object('n', n, 'dates', nd, 'source', s)) from (select count(*) n, count(distinct pour) nd, string_agg(distinct source, ',') s from devoirs group by famille_id, matiere, lower(regexp_replace(texte, '[^a-zA-Z]', '', 'g')) having count(*) > 1) z) detail"
           jq -n --arg q "$q" '{query:$q}' | curl -sS -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d @- | jq .
