@@ -20,3 +20,22 @@ jobs:
             (select json_agg(json_build_object('n', n, 'dates', nd, 'source', s)) from (select count(*) n, count(distinct pour) nd, string_agg(distinct source, ',') s from devoirs group by famille_id, matiere, lower(regexp_replace(texte, '[^a-zA-Z]', '', 'g')) having count(*) > 1) z) detail"
           jq -n --arg q "$q" '{query:$q}' | curl -sS -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d @- | jq .
+  essai-ia:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ia-prof-simple
+          path: app
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Essai du ton de l'assistant
+        working-directory: diag
+        env:
+          SUPABASE_URL: http://x
+          SUPABASE_SERVICE_ROLE_KEY: x
+        run: deno run -A essai-ia.ts
