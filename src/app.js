@@ -116,6 +116,9 @@ function estConsigne(d){var t=" "+(d.texte||"").toLowerCase()+" ";
   function mot(re){return new RegExp("[^a-zà-ÿ0-9]("+re+")(?![a-zà-ÿ])").test(t);}
   return mot("rapporter|apporter|ramener|amener|rendre|faire signer|signer|signée?s?|prévoir|penser à|autorisation|coupon|matériel")
     &&!mot("exercices?|ex\\.? ?\\d|pages?|p\\. ?\\d|apprendre|réviser|leçons?|rédiger|lire|écrire|répondre|calculer|terminer|finir|exposé|récitation|traduire|devoirs?|dm|dossier|travail");}
+// Une leçon à apprendre se valide aussi par un mini-test réussi.
+function estLecon(d){var t=" "+(d.texte||"").toLowerCase()+" ";
+  return new RegExp("[^a-zà-ÿ0-9](apprendre|réviser|revoir|leçons?|savoir|connaître|par cœur|récitation|poésie|contrôle|évaluation|interro(gation)?|vocabulaire|retenir)(?![a-zà-ÿ])").test(t);}
 function devoirCard(d){
   var c=mcolor(d.matiere),av=aValider(d),fait=d.fait&&!av;
   return '<div class="card devoir'+(fait?" fait":"")+'" style="--mc:'+c+'">'+
@@ -124,7 +127,7 @@ function devoirCard(d){
    (av?'<p class="avalider">Coché sur Pronote : montre-moi ton travail pour le valider.</p>':'')+
    '<p class="txt">'+esc(d.texte)+'</p>'+
    '<div class="row">'+sayBtn(d.matiere+". "+d.texte,"Écouter le devoir")+
-   (fait?'':'<button class="btn small ghost" data-act="go-carte" data-sujet="'+esc(d.matiere+" : "+d.texte)+'">Carte mentale</button><button class="btn small ghost" data-act="go-test" data-sujet="'+esc(d.matiere+" : "+d.texte)+'">Me tester</button>')+
+   (fait?'':'<button class="btn small ghost" data-act="go-carte" data-sujet="'+esc(d.matiere+" : "+d.texte)+'">Carte mentale</button><button class="btn small ghost" data-act="go-test" data-id="'+esc(d.id)+'" data-sujet="'+esc(d.matiere+" : "+d.texte)+'">Me tester</button>')+
    '</div></div></div>';
 }
 function addForm(){
@@ -371,7 +374,7 @@ function makeQuiz(sujet,carte,revision){
     if(r.statut!=="ok"){ui.quizErr=r.message||"Choisis un sujet de cours.";render();return;}
     var qs=(r.questions||[]).filter(function(q){return q&&q.q&&Array.isArray(q.choix)&&q.choix.length>=2&&q.bonne>=0&&q.bonne<q.choix.length;}).slice(0,6);
     if(!qs.length){ui.quizErr="Ça n'a pas marché cette fois. Réessaie.";render();return;}
-    ui.quiz={sujet:sujet,qs:qs,i:0,rep:[],tried:[],solved:false};render();
+    ui.quiz={sujet:sujet,qs:qs,i:0,rep:[],tried:[],solved:false,devoir:ui.validerTest};ui.validerTest=null;render();
   }).catch(function(e){ui.quizLoading=false;ui.quizErr=errText(e);render();});
 }
 function niveau(score,total){var p=score/total;
@@ -380,7 +383,7 @@ function vQuiz(){
   var z=ui.quiz;
   if(z.i>=z.qs.length){
     var sc=z.rep.filter(Boolean).length,n=niveau(sc,z.qs.length);
-    return '<div class="card score"><h2>Résultat</h2><span class="big">'+sc+' / '+z.qs.length+'</span><span class="niveau '+n[0]+'">'+n[1]+'</span>'+
+    return '<div class="card score"><h2>Résultat</h2><span class="big">'+sc+' / '+z.qs.length+'</span><span class="niveau '+n[0]+'">'+n[1]+'</span>'+(z.msgDevoir?'<p class="avalider">'+esc(z.msgDevoir)+'</p>':'')+
       '<p>Juste du premier coup : '+sc+'. Tu gagnes '+sc+' étoile'+(sc>1?"s":"")+'.</p><div class="row" style="justify-content:center"><button class="btn" data-act="quiz-again">Refaire un test</button><button class="btn line" data-act="quiz-close">Terminer</button></div></div>';
   }
   var q=z.qs[z.i];
@@ -406,8 +409,8 @@ function sujets(){
   function push(arr,o){var k=key(o.titre);if(!k||vus[k])return;vus[k]=1;arr.push(o);}
   var cartes=S.cartes.slice().sort(function(a,b){return (b.cree||"").localeCompare(a.cree||"");});
   cartes.forEach(function(c){if((c.cree||"")>=limIso)push(cur,{titre:c.titre||c.sujet,matiere:c.matiere||matiereDe(c.sujet),carteId:c.id,quand:c.cree});});
-  S.devoirs.filter(function(d){return !d.fait&&d.pour<=semaine;}).sort(function(a,b){return (a.pour||"").localeCompare(b.pour||"");})
-    .forEach(function(d){push(cur,{titre:d.matiere+" : "+d.texte,matiere:d.matiere,pour:d.pour});});
+  S.devoirs.filter(function(d){return resteAFaire(d)&&d.pour<=semaine;}).sort(function(a,b){return (a.pour||"").localeCompare(b.pour||"");})
+    .forEach(function(d){push(cur,{titre:d.matiere+" : "+d.texte,matiere:d.matiere,pour:d.pour,devoir:d});});
   cartes.forEach(function(c){if((c.cree||"")<limIso)push(old,{titre:c.titre||c.sujet,matiere:c.matiere||matiereDe(c.sujet),carteId:c.id,quand:c.cree});});
   S.tests.slice().sort(function(a,b){return (b.cree||"").localeCompare(a.cree||"");})
     .forEach(function(t){if((t.cree||"")<limIso)push(old,{titre:t.sujet,matiere:matiereDe(t.sujet),quand:t.cree,dernier:t.score+" / "+t.total});});
@@ -623,7 +626,7 @@ function vParent(){
 /* ---------- actions ---------- */
 document.addEventListener("click",function(e){
   var t=e.target.closest("[data-act],nav.tabs button");if(!t)return;
-  if(t.dataset.tab){tab=t.dataset.tab;ls("cartable.tab",tab);ui.prefill="";render();window.scrollTo(0,0);return;}
+  if(t.dataset.tab){tab=t.dataset.tab;ui.validerTest=null;ls("cartable.tab",tab);ui.prefill="";render();window.scrollTo(0,0);return;}
   var a=t.dataset.act,id=t.dataset.id;
   if(a==="toggle")toggleDevoir(id);
   else if(a==="add-open"){ui.addOpen=true;ui.addM="";ui.addTxt="";ui.addQ=addDays(1);render();}
@@ -646,7 +649,7 @@ document.addEventListener("click",function(e){
   else if(a==="go-carte"){tab="cartes";ui.map=null;ui.prefill=t.dataset.sujet;render();window.scrollTo(0,0);}
   else if(a==="verif-cam"){ouvrirCamera("photo","Prends ton devoir fini en photo, bien à plat.").then(function(b){if(b)verifPhoto(b);});}
   else if(a==="verif-close"){ui.verif=null;render();}
-  else if(a==="verif-lecon"){var vl=ui.verif;ui.verif=null;ui.validerTest={id:vl.id,sujet:vl.sujet};tab="tests";ui.quiz=null;ui.prefill=vl.sujet;render();window.scrollTo(0,0);}
+  else if(a==="verif-lecon"){var vl=ui.verif;ui.verif=null;ui.validerTest={id:vl.id,sujet:vl.sujet,lecon:true};tab="tests";ui.quiz=null;ui.prefill=vl.sujet;render();window.scrollTo(0,0);}
   else if(a==="aide-open"){var va=ui.verif;if(va){va.aide={msgs:[],brouillon:""};render();}}
   else if(a==="aide-rapide"){aideDemander(AIDE_RAPIDES[+t.dataset.i]);}
   else if(a==="aide-envoyer"){var q=$("#aideQ");aideDemander(q&&q.value);}
@@ -656,7 +659,10 @@ document.addEventListener("click",function(e){
   else if(a==="q-nouveau"){ui.q={matiere:ui.q.matiere,msgs:[],brouillon:""};render();}
   else if(a==="q-photo"){ouvrirCamera("photo","Prends ton exercice en photo, bien à plat.").then(function(b){if(b&&ui.q){ui.q.photo={blob:b,url:URL.createObjectURL(b)};render();}});}
   else if(a==="q-photo-retirer"){ui.q.photo=null;render();}
-  else if(a==="go-test"){ui.verif=null;tab="tests";ui.quiz=null;ui.prefill=t.dataset.sujet;render();window.scrollTo(0,0);}
+  else if(a==="go-test"){ui.verif=null;
+    var dg=t.dataset.id&&S.devoirs.filter(function(x){return x.id===t.dataset.id;})[0];
+    ui.validerTest=dg&&device==="enfant"&&resteAFaire(dg)?{id:dg.id,sujet:t.dataset.sujet,lecon:estLecon(dg)}:null;
+    tab="tests";ui.quiz=null;ui.prefill=t.dataset.sujet;render();window.scrollTo(0,0);}
   else if(a==="photo-del"){var k=+t.dataset.i,p=ui.photos.splice(k,1)[0];if(p)try{URL.revokeObjectURL(p.url);}catch(_){}render();}
   else if(a==="map-make"){ui.prefill="";makeMap();}
   else if(a==="map-open"){ui.map=S.cartes.filter(function(c){return c.id===id;})[0]||null;render();window.scrollTo(0,0);}
@@ -664,7 +670,8 @@ document.addEventListener("click",function(e){
   else if(a==="map-test"){var m=ui.map;ui.map=null;makeQuiz(m.titre||m.sujet,m);}
   else if(a==="quiz-make"){var s=$("#quizSujet").value;ui.prefill="";makeQuiz(s);}
   else if(a==="quiz-sujet"){var lst=ui.sujets&&ui.sujets[t.dataset.mode],o=lst&&lst[+t.dataset.i];
-    if(o){var cc=o.carteId?S.cartes.filter(function(x){return x.id===o.carteId;})[0]:null;makeQuiz(o.titre,cc,t.dataset.mode==="old");}}
+    if(o){var od=o.devoir&&device==="enfant"&&resteAFaire(o.devoir)?o.devoir:null;ui.validerTest=od?{id:od.id,sujet:o.titre,lecon:estLecon(od)}:null;
+      var cc=o.carteId?S.cartes.filter(function(x){return x.id===o.carteId;})[0]:null;makeQuiz(o.titre,cc,t.dataset.mode==="old");}}
   else if(a==="quiz-carte"){var c=S.cartes.filter(function(x){return x.id===id;})[0];if(c)makeQuiz(c.titre||c.sujet,c);}
   else if(a==="quiz-ans"){var z=ui.quiz;if(z.solved)return;var i=+t.dataset.i,ok=i===z.qs[z.i].bonne;
     if(z.rep.length===z.i)z.rep.push(ok);
@@ -672,13 +679,15 @@ document.addEventListener("click",function(e){
     speak(ok?"Bravo, tu as trouvé !":"Pas encore. Regarde l'indice.");render();}
   else if(a==="quiz-next"){var z2=ui.quiz;z2.i++;z2.tried=[];z2.solved=false;
     if(z2.i>=z2.qs.length){var sc=z2.rep.filter(Boolean).length;Store.add("tests",{sujet:z2.sujet,score:sc,total:z2.qs.length});
-      var vt=ui.validerTest;
-      if(vt&&vt.sujet===z2.sujet){ui.validerTest=null;
-        if(sc/z2.qs.length>=.6){validerDevoir(vt.id);speak("Bravo ! Ta leçon est sue, le devoir est validé.");}
-        else speak("Encore une petite révision, puis refais le test pour valider ton devoir.");}
+      var vt=z2.devoir;
+      if(vt){
+        if(sc/z2.qs.length<.6)z2.msgDevoir="Encore une petite révision, puis refais le test pour valider ton devoir.";
+        else if(vt.lecon){validerDevoir(vt.id);z2.devoirValide=true;z2.msgDevoir="Bravo ! Ta leçon est sue, le devoir est validé.";}
+        else z2.msgDevoir="Bravo pour le test ! Pour valider ce devoir, montre-moi ton travail en photo dans l'onglet Devoirs.";
+        speak(z2.msgDevoir);}
       if(device==="enfant")Store.setDoc("suivi",{derniere_activite:new Date().toISOString()});}
     render();window.scrollTo(0,0);}
-  else if(a==="quiz-again"){var su=ui.quiz.sujet;ui.quiz=null;ui.quizSujet=su;render();}
+  else if(a==="quiz-again"){var su=ui.quiz.sujet;if(ui.quiz.devoir&&!ui.quiz.devoirValide)ui.validerTest=ui.quiz.devoir;ui.quiz=null;ui.quizSujet=su;render();}
   else if(a==="quiz-close"){ui.quiz=null;render();}
   else if(a==="reg-save"){Store.setDoc("reglages",{prenom:$("#rPrenom").value.trim()||"Ethan",classe:$("#rClasse").value});}
   else if(a==="theme-open")themeOpen();
