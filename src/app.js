@@ -104,18 +104,22 @@ function render(){
   $("#starCount").textContent=stars();
   document.querySelectorAll("nav.tabs button").forEach(function(b){b.setAttribute("aria-selected",String(b.dataset.tab===tab));});
   var v=$("#view");
-  v.innerHTML=tab==="devoirs"?vDevoirs():tab==="cartes"?vCartes():tab==="tests"?vTests():tab==="notes"?vNotes():vParent();
+  v.innerHTML=tab==="devoirs"?vDevoirs():tab==="cartes"?vCartes():tab==="tests"?vTests():tab==="notes"?vNotes():tab==="questions"?vQuestions():vParent();
 }
 
 /* ---------- DEVOIRS ---------- */
+// Coché dans l'appli Pronote mais pas encore montré en photo dans DysOrga : Ethan doit encore le valider.
+function aValider(d){return d.fait&&!d.fait_le&&d.source==="pronote"&&d.pour>=dayKey();}
+function resteAFaire(d){return !d.fait||aValider(d);}
 function devoirCard(d){
-  var c=mcolor(d.matiere);
-  return '<div class="card devoir'+(d.fait?" fait":"")+'" style="--mc:'+c+'">'+
-   '<button class="check" data-act="toggle" data-id="'+esc(d.id)+'" aria-label="'+(d.fait?"Pas encore fait":"J\'ai fini : valider avec une photo")+'">'+ICON.check+'</button>'+
+  var c=mcolor(d.matiere),av=aValider(d),fait=d.fait&&!av;
+  return '<div class="card devoir'+(fait?" fait":"")+'" style="--mc:'+c+'">'+
+   '<button class="check" data-act="toggle" data-id="'+esc(d.id)+'" aria-label="'+(fait?"Pas encore fait":"J\'ai fini : valider avec une photo")+'">'+ICON.check+'</button>'+
    '<div class="body"><div class="row"><span class="chip">'+esc(d.matiere)+'</span><span class="hint">pour '+esc(fmtDay(d.pour))+'</span>'+(d.exemple?'<span class="ex">exemple</span>':'')+'</div>'+
+   (av?'<p class="avalider">Coché sur Pronote : montre-moi ton travail pour le valider.</p>':'')+
    '<p class="txt">'+esc(d.texte)+'</p>'+
    '<div class="row">'+sayBtn(d.matiere+". "+d.texte,"Écouter le devoir")+
-   (d.fait?'':'<button class="btn small ghost" data-act="go-carte" data-sujet="'+esc(d.matiere+" : "+d.texte)+'">Carte mentale</button><button class="btn small ghost" data-act="go-test" data-sujet="'+esc(d.matiere+" : "+d.texte)+'">Me tester</button>')+
+   (fait?'':'<button class="btn small ghost" data-act="go-carte" data-sujet="'+esc(d.matiere+" : "+d.texte)+'">Carte mentale</button><button class="btn small ghost" data-act="go-test" data-sujet="'+esc(d.matiere+" : "+d.texte)+'">Me tester</button>')+
    '</div></div></div>';
 }
 function addForm(){
@@ -244,9 +248,9 @@ function verifPhoto(f){
 }
 function vDevoirs(){
   var demain=addDays(1);
-  var todo=S.devoirs.filter(function(d){return !d.fait;}).sort(function(a,b){return (a.pour||"").localeCompare(b.pour||"");});
+  var todo=S.devoirs.filter(function(d){return device==="enfant"?resteAFaire(d):!d.fait;}).sort(function(a,b){return (a.pour||"").localeCompare(b.pour||"");});
   var proches=todo.filter(function(d){return d.pour<=demain;}), plus=todo.filter(function(d){return d.pour>demain;});
-  var faits=S.devoirs.filter(function(d){return d.fait;}).sort(function(a,b){return (b.fait_le||"").localeCompare(a.fait_le||"");}).slice(0,6);
+  var faits=S.devoirs.filter(function(d){return d.fait&&todo.indexOf(d)<0;}).sort(function(a,b){return (b.fait_le||"").localeCompare(a.fait_le||"");}).slice(0,6);
   var pourDemain=S.devoirs.filter(function(d){return d.pour===demain;});
   var h='';
   if(device==="enfant"&&!aCommence()&&todo.length)h+='<button class="btn big" data-act="commence">Je commence mes devoirs</button>';
@@ -262,19 +266,19 @@ function vDevoirs(){
 function toggleDevoir(id){
   var d=S.devoirs.filter(function(x){return x.id===id;})[0];if(!d)return;
   // L'enfant valide un devoir avec la photo de son travail (ou un mini-test pour une leçon).
-  if(!d.fait&&device==="enfant"){
+  if(device==="enfant"&&resteAFaire(d)){
     ui.verif={id:id,sujet:d.matiere+" : "+d.texte};render();window.scrollTo(0,0);
     speak("Pour valider ce devoir, montre-moi ton travail en photo.");return;}
   var fait=!d.fait;Store.upd("devoirs",id,{fait:fait,fait_le:fait?new Date().toISOString():null});
   if(d.source==="pronote")pronoteDevoirFait(id,fait).catch(function(){});
 }
 function validerDevoir(id){
-  var d=S.devoirs.filter(function(x){return x.id===id;})[0];if(!d||d.fait)return;
+  var d=S.devoirs.filter(function(x){return x.id===id;})[0];if(!d||(d.fait&&d.fait_le))return;
   Store.upd("devoirs",id,{fait:true,fait_le:new Date().toISOString()});
   if(d.source==="pronote")pronoteDevoirFait(id,true).catch(function(){});
   if(device==="enfant"){
     var demain=addDays(1);
-    var reste=S.devoirs.filter(function(x){return x.pour<=demain&&!x.fait&&x.id!==id;});
+    var reste=S.devoirs.filter(function(x){return x.pour<=demain&&resteAFaire(x)&&x.id!==id;});
     var patch={derniere_activite:new Date().toISOString()};
     if(!reste.length)patch.devoirs_finis_le=new Date().toISOString();
     Store.setDoc("suivi",patch);
@@ -463,6 +467,42 @@ function messageCard(x){
    (ok?'<span class="hint">+3 étoiles</span>':'<button class="btn small" data-act="go-carte" data-sujet="'+esc(ch)+'">Faire une carte mentale</button><button class="btn small ghost" data-act="go-test" data-sujet="'+esc(ch)+'">M\'entraîner</button>')+
    '</div></div>';
 }
+/* ---------- QUESTIONS SUR SES COURS ---------- */
+// Réservé à ses matières. L'assistant explique sans donner les réponses ; vidéos et sites : c'est avec maman.
+var Q_RAPIDES=["Explique-moi ma dernière leçon","Je ne comprends pas un mot","Donne-moi un autre exemple","Comment apprendre cette leçon ?"];
+var Q_MAX=15;
+function vQuestions(){
+  var q=ui.q||(ui.q={matiere:"",msgs:[],brouillon:""});
+  var h='<div class="card"><h2>Pose ta question</h2><p class="hint">Je t\'explique tes leçons. Je ne fais pas tes exercices à ta place, et pas de vidéos ni de sites : pour ça, demande à ta maman.</p>'+
+    '<span class="lbl">Quelle matière ?</span><div class="matieres">'+MATIERES.map(function(m){
+      return '<button class="mbtn" style="--mc:'+m.c+'" aria-pressed="'+(q.matiere===m.k)+'" data-act="q-m" data-m="'+esc(m.k)+'">'+esc(m.k)+'</button>';}).join("")+'</div></div>';
+  if(q.msgs.length){h+='<div class="card aide">'+q.msgs.map(function(m){
+      return m.qui==="moi"?'<div class="bulle moi">'+esc(m.texte)+'</div>'
+        :'<div class="bulle elle'+(m.maman?' maman':'')+'"><span>'+esc(m.texte)+'</span>'+sayBtn(m.texte,"Écouter")+'</div>';}).join("")+
+      (q.loading?'<div class="wait"><span class="dot"></span>Je réfléchis…</div>':'')+'</div>';}
+  if(q.err)h+='<p class="err">'+esc(q.err)+'</p>';
+  var posees=q.msgs.filter(function(m){return m.qui==="moi";}).length;
+  if(posees>=Q_MAX)return '<div class="wrap">'+h+'<p><strong>Bravo pour toutes ces questions !</strong> Fais une petite pause, ou une carte mentale pour retenir.</p><button class="btn line" data-act="q-nouveau">Nouvelle discussion</button></div>';
+  if(!q.loading){
+    h+='<div class="rapides">'+Q_RAPIDES.map(function(x,i){return '<button class="btn small ghost" data-act="q-rapide" data-i="'+i+'">'+esc(x)+'</button>';}).join("")+'</div>'+
+      '<label class="lbl" for="qQ">Ta question</label>'+
+      '<textarea id="qQ" maxlength="300" placeholder="Ex : c\'est quoi un complément du nom ?">'+esc(q.brouillon||"")+'</textarea>'+
+      '<button class="btn big" data-act="q-envoyer" style="margin-top:8px">Envoyer</button>'+
+      (q.msgs.length?'<button class="btn line" data-act="q-nouveau" style="margin-top:8px">Nouvelle discussion</button>':'');
+  }
+  return '<div class="wrap">'+h+'</div>';
+}
+function questionDemander(question){
+  var q=ui.q;if(!q)return;
+  question=String(question||"").trim().slice(0,300);if(!question||q.loading)return;
+  var histo=q.msgs.slice(-12).map(function(m){return {qui:m.qui,texte:m.texte};});
+  q.msgs.push({qui:"moi",texte:question});q.brouillon="";q.loading=true;q.err="";render();
+  demander("question",{matiere:q.matiere,historique:histo,question:question}).then(function(r){
+    q.loading=false;
+    var t=r.message||"On reste sur tes cours : pose-moi une question sur une leçon.";
+    q.msgs.push({qui:"elle",texte:t,maman:r.statut==="maman"});render();speak(t);activite();
+  }).catch(function(e){q.loading=false;q.msgs.pop();q.brouillon=question;q.err=errText(e);render();});
+}
 function vNotes(){
   var notes=S.notes.slice().sort(function(a,b){return (b.cree||"").localeCompare(a.cree||"");});
   var h='';
@@ -541,10 +581,10 @@ function vParent(){
      (dd.length&&ddFaits===dd.length&&su.devoirs_finis_le?"Fini "+esc(fmtWhen(su.devoirs_finis_le)):"")+'</span></div>'+
    '<div class="card kpi"><span class="hint">Cartes mentales</span><span class="v">'+S.cartes.length+'</span><span class="hint">Tests faits : '+S.tests.length+'</span></div></div>';
   h+=alertesCard()+pronoteCard();
-  h+='<div class="note"><b>Règles de l\'assistant :</b> il ne donne jamais la réponse d\'un exercice et ne fait pas le travail à la place d\'Ethan. Il refuse ce qui n\'est pas de la révision. L\'appli n\'a aucun lien vers internet et pas de discussion libre.</div>';
+  h+='<div class="note"><b>Règles de l\'assistant :</b> il ne donne jamais la réponse d\'un exercice et ne fait pas le travail à la place d\'Ethan. Il refuse ce qui n\'est pas de la révision. L\'appli n\'a aucun lien vers internet. L\'onglet Questions ne répond que sur ses matières, sans donner les réponses des exercices ; s\'il demande une vidéo ou un site, il lui dit de passer par vous.</div>';
   var aVenir=S.devoirs.filter(function(d){return d.pour>=dayKey();}).sort(function(a,b){return (a.pour||"").localeCompare(b.pour||"");});
   if(aVenir.length)h+='<div class="section-title"><h2>Devoirs à venir</h2><span class="count">'+aVenir.filter(function(d){return !d.fait;}).length+' à faire</span></div><div class="card histo">'+aVenir.map(function(d){
-    return '<div><span>'+esc(d.matiere)+' · '+esc(d.texte.length>90?d.texte.slice(0,90)+"…":d.texte)+'<br><span class="hint">pour '+esc(fmtDay(d.pour))+'</span></span><span class="s">'+(d.fait?"Fait ✓":"À faire")+'</span></div>';}).join("")+'</div>';
+    return '<div><span>'+esc(d.matiere)+' · '+esc(d.texte.length>90?d.texte.slice(0,90)+"…":d.texte)+'<br><span class="hint">pour '+esc(fmtDay(d.pour))+'</span></span><span class="s">'+(d.fait?(aValider(d)?"Coché sur Pronote, pas encore vérifié":"Fait et vérifié ✓"):"À faire")+'</span></div>';}).join("")+'</div>';
   var notes=S.notes.slice().sort(function(a,b){return (b.cree||"").localeCompare(a.cree||"");}).slice(0,6);
   if(notes.length)h+='<div class="section-title"><h2>Dernières notes</h2></div><div class="card histo">'+notes.map(function(x){
     return '<div><span>'+esc(x.matiere)+(x.chapitre?' · '+esc(x.chapitre):'')+'<br><span class="hint">'+esc(fmtWhen(x.cree))+'</span></span><span class="s"><span class="niveau '+(auDessus(x)?"n3":"n2")+'" style="padding:2px 10px">'+esc(String(x.note).replace(".",","))+' / '+x.sur+'</span></span></div>';}).join("")+'</div>';
@@ -598,6 +638,10 @@ document.addEventListener("click",function(e){
   else if(a==="aide-open"){var va=ui.verif;if(va){va.aide={msgs:[],brouillon:""};render();}}
   else if(a==="aide-rapide"){aideDemander(AIDE_RAPIDES[+t.dataset.i]);}
   else if(a==="aide-envoyer"){var q=$("#aideQ");aideDemander(q&&q.value);}
+  else if(a==="q-m"){ui.q.matiere=ui.q.matiere===t.dataset.m?"":t.dataset.m;render();}
+  else if(a==="q-rapide"){questionDemander(Q_RAPIDES[+t.dataset.i]);}
+  else if(a==="q-envoyer"){var qq=$("#qQ");questionDemander(qq&&qq.value);}
+  else if(a==="q-nouveau"){ui.q={matiere:ui.q.matiere,msgs:[],brouillon:""};render();}
   else if(a==="go-test"){ui.verif=null;tab="tests";ui.quiz=null;ui.prefill=t.dataset.sujet;render();window.scrollTo(0,0);}
   else if(a==="photo-del"){var k=+t.dataset.i,p=ui.photos.splice(k,1)[0];if(p)try{URL.revokeObjectURL(p.url);}catch(_){}render();}
   else if(a==="map-make"){ui.prefill="";makeMap();}
@@ -647,7 +691,7 @@ document.addEventListener("click",function(e){
     .catch(function(){showSync("La création du compte n'a pas marché. Réessaie.");});}
   else if(a==="deconnexion"){deconnexion().then(function(){location.reload();});}
 });
-document.addEventListener("input",function(e){if(e.target.id==="mapSujet"||e.target.id==="quizSujet"){ui.prefill="";ui[e.target.id]=e.target.value;}if(e.target.id==="mapLecon")ui.mapLecon=e.target.value;if(e.target.id==="aideQ"&&ui.verif&&ui.verif.aide)ui.verif.aide.brouillon=e.target.value;});
+document.addEventListener("input",function(e){if(e.target.id==="mapSujet"||e.target.id==="quizSujet"){ui.prefill="";ui[e.target.id]=e.target.value;}if(e.target.id==="mapLecon")ui.mapLecon=e.target.value;if(e.target.id==="aideQ"&&ui.verif&&ui.verif.aide)ui.verif.aide.brouillon=e.target.value;if(e.target.id==="qQ"&&ui.q)ui.q.brouillon=e.target.value;});
 document.addEventListener("change",function(e){if(e.target.id==="fondFile"&&e.target.files&&e.target.files[0])setFond(e.target.files[0]);if(e.target.id==="mapImg"&&device==="parent"&&e.target.files&&e.target.files.length)addPhotos(e.target.files);
   if(e.target.id==="pnQrImg"&&device==="parent"&&e.target.files&&e.target.files[0]){var f=e.target.files[0];e.target.value="";
     if(!pinPronote())return;
