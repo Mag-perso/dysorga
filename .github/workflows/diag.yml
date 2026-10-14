@@ -14,13 +14,10 @@ jobs:
     steps:
       - name: État de la synchro
         run: |
-          q="select (select string_agg(role, ',') from membres) roles,
-            (select derniere_connexion::text from suivi limit 1) derniere_connexion_enfant,
-            (select derniere_activite::text from suivi limit 1) derniere_activite,
-            (select count(*) from devoirs where pour >= current_date - 7) devoirs_recents,
-            (select count(*) from devoirs where pour >= current_date - 7 and fait) faits,
-            (select count(*) from devoirs where pour >= current_date - 7 and fait and fait_le is not null) faits_dans_dysorga,
-            (select string_agg(jour::text || ':' || n, ', ' order by jour) from usage_assistant where jour >= current_date - 8) appels_assistant,
+          q="with g as (select matiere, pour, count(*) n, count(distinct texte) nt, count(distinct md5(regexp_replace(texte, '\\s', '', 'g'))) nts, count(distinct length(texte)) nl, count(distinct source) ns, bool_or(fait) f, count(distinct to_char(cree, 'YYYY-MM-DD HH24')) nh from devoirs where pour >= current_date group by 1,2)
+            select (select count(*) from devoirs where pour >= current_date) total_a_venir,
+            (select count(*) from g) groupes_matiere_jour,
+            (select json_agg(json_build_object('n',n,'textes',nt,'textes_sans_espaces',nts,'longueurs',nl,'sources',ns,'un_fait',f,'heures_creation',nh)) from g where n > 1) groupes_multiples,
             (select max(derniere_synchro)::text from pronote_comptes) derniere_synchro"
           jq -n --arg q "$q" '{query:$q}' | curl -sS -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d @- | jq .
