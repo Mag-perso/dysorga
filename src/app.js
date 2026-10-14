@@ -192,7 +192,6 @@ function orgPhoto(f){
    Le devoir n'est coché que si l'assistant trouve que tout est fait et juste.
    Sinon il montre où regarder (jamais la réponse) et l'enfant peut demander une explication. */
 var AIDE_MAX=8;
-var AIDE_RAPIDES=["Je ne comprends pas la consigne","Montre-moi la méthode avec un autre exemple","Je ne sais pas par où commencer","Pourquoi c'est faux ?"];
 function verifCard(){
   var v=ui.verif;if(!v||device!=="enfant")return "";
   var h='<div class="card"><div class="row" style="justify-content:space-between"><h3>Valider mon devoir</h3><button class="btn small line" data-act="verif-close">Fermer</button></div>'+
@@ -225,8 +224,7 @@ function aideBloc(v){
   if(a.err)h+='<p class="err">'+esc(a.err)+'</p>';
   var posees=a.msgs.filter(function(m){return m.qui==="moi";}).length;
   if(posees>=AIDE_MAX)return h+'<p><strong>Maintenant, essaie de corriger tout seul.</strong> Tu peux y arriver ! Ensuite, reprends la photo.</p></div>';
-  h+='<div class="rapides">'+AIDE_RAPIDES.map(function(q,i){return '<button class="btn small ghost" data-act="aide-rapide" data-i="'+i+'">'+esc(q)+'</button>';}).join("")+'</div>'+
-    '<label class="lbl" for="aideQ">Ou écris ta question sur l\'exercice</label>'+
+  h+='<label class="lbl" for="aideQ">Écris avec tes mots ce que tu ne comprends pas</label>'+
     '<textarea id="aideQ" maxlength="300" placeholder="Ex : je ne comprends pas la question 2">'+esc(a.brouillon||"")+'</textarea>'+
     '<button class="btn" data-act="aide-envoyer" style="margin-top:8px">Envoyer</button>';
   return h+'</div>';
@@ -478,7 +476,6 @@ function messageCard(x){
 }
 /* ---------- QUESTIONS SUR SES COURS ---------- */
 // Réservé à ses matières. L'assistant explique sans donner les réponses ; vidéos et sites : c'est avec maman.
-var Q_RAPIDES=["Explique-moi ma dernière leçon","Je ne comprends pas un mot","Donne-moi un autre exemple","Comment apprendre cette leçon ?"];
 var Q_MAX=15;
 function vQuestions(){
   var q=ui.q||(ui.q={matiere:"",msgs:[],brouillon:""});
@@ -493,10 +490,9 @@ function vQuestions(){
   var posees=q.msgs.filter(function(m){return m.qui==="moi";}).length;
   if(posees>=Q_MAX)return '<div class="wrap">'+h+'<p><strong>Bravo pour toutes ces questions !</strong> Fais une petite pause, ou une carte mentale pour retenir.</p><button class="btn line" data-act="q-nouveau">Nouvelle discussion</button></div>';
   if(!q.loading){
-    h+='<div class="rapides">'+Q_RAPIDES.map(function(x,i){return '<button class="btn small ghost" data-act="q-rapide" data-i="'+i+'">'+esc(x)+'</button>';}).join("")+'</div>'+
-      (q.photo?'<div class="row qjointe"><img class="qphoto" src="'+q.photo.url+'" alt="Photo jointe"><span>Photo prête à envoyer</span><button class="btn small line" data-act="q-photo-retirer">Retirer</button></div>'
+    h+=(q.photo?'<div class="row qjointe"><img class="qphoto" src="'+q.photo.url+'" alt="Photo jointe"><span>Photo prête à envoyer</span><button class="btn small line" data-act="q-photo-retirer">Retirer</button></div>'
         :'<button class="btn line" data-act="q-photo" style="margin-top:8px">'+ICON.photo+'Montrer mon exercice en photo</button>')+
-      '<label class="lbl" for="qQ">Ta question</label>'+
+      '<label class="lbl" for="qQ">'+(q.msgs.length?"Ta réponse, avec tes mots":"Ta question, avec tes mots")+'</label>'+
       '<textarea id="qQ" maxlength="300" placeholder="Ex : c\'est quoi un complément du nom ?">'+esc(q.brouillon||"")+'</textarea>'+
       '<button class="btn big" data-act="q-envoyer" style="margin-top:8px">Envoyer</button>'+
       (q.msgs.length?'<button class="btn line" data-act="q-nouveau" style="margin-top:8px">Nouvelle discussion</button>':'');
@@ -651,10 +647,8 @@ document.addEventListener("click",function(e){
   else if(a==="verif-close"){ui.verif=null;render();}
   else if(a==="verif-lecon"){var vl=ui.verif;ui.verif=null;ui.validerTest={id:vl.id,sujet:vl.sujet,lecon:true};tab="tests";ui.quiz=null;ui.prefill=vl.sujet;render();window.scrollTo(0,0);}
   else if(a==="aide-open"){var va=ui.verif;if(va){va.aide={msgs:[],brouillon:""};render();}}
-  else if(a==="aide-rapide"){aideDemander(AIDE_RAPIDES[+t.dataset.i]);}
   else if(a==="aide-envoyer"){var q=$("#aideQ");aideDemander(q&&q.value);}
   else if(a==="q-m"){ui.q.matiere=ui.q.matiere===t.dataset.m?"":t.dataset.m;render();}
-  else if(a==="q-rapide"){questionDemander(Q_RAPIDES[+t.dataset.i]);}
   else if(a==="q-envoyer"){var qq=$("#qQ");questionDemander(qq&&qq.value);}
   else if(a==="q-nouveau"){ui.q={matiere:ui.q.matiere,msgs:[],brouillon:""};render();}
   else if(a==="q-photo"){ouvrirCamera("photo","Prends ton exercice en photo, bien à plat.").then(function(b){if(b&&ui.q){ui.q.photo={blob:b,url:URL.createObjectURL(b)};render();}});}
