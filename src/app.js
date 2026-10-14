@@ -109,12 +109,17 @@ function render(){
 
 /* ---------- DEVOIRS ---------- */
 // Coché dans l'appli Pronote mais pas encore montré en photo dans DysOrga : Ethan doit encore le valider.
-function aValider(d){return d.fait&&!d.fait_le&&d.source==="pronote"&&d.pour>=dayKey();}
+function aValider(d){return d.fait&&!d.fait_le&&d.source==="pronote"&&d.pour>=dayKey()&&!estConsigne(d);}
 function resteAFaire(d){return !d.fait||aValider(d);}
+// Une simple consigne (rapporter une feuille, faire signer, apporter du matériel) se coche sans photo.
+function estConsigne(d){var t=" "+(d.texte||"").toLowerCase()+" ";
+  function mot(re){return new RegExp("[^a-zà-ÿ0-9]("+re+")(?![a-zà-ÿ])").test(t);}
+  return mot("rapporter|apporter|ramener|amener|rendre|faire signer|signer|signée?s?|prévoir|penser à|autorisation|coupon|matériel")
+    &&!mot("exercices?|ex\\.? ?\\d|pages?|p\\. ?\\d|apprendre|réviser|leçons?|rédiger|lire|écrire|répondre|calculer|terminer|finir|exposé|récitation|traduire|devoirs?|dm|dossier|travail");}
 function devoirCard(d){
   var c=mcolor(d.matiere),av=aValider(d),fait=d.fait&&!av;
   return '<div class="card devoir'+(fait?" fait":"")+'" style="--mc:'+c+'">'+
-   '<button class="check" data-act="toggle" data-id="'+esc(d.id)+'" aria-label="'+(fait?"Pas encore fait":"J\'ai fini : valider avec une photo")+'">'+ICON.check+'</button>'+
+   '<button class="check" data-act="toggle" data-id="'+esc(d.id)+'" aria-label="'+(fait?"Pas encore fait":estConsigne(d)?"C\'est fait":"J\'ai fini : valider avec une photo")+'">'+ICON.check+'</button>'+
    '<div class="body"><div class="row"><span class="chip">'+esc(d.matiere)+'</span><span class="hint">pour '+esc(fmtDay(d.pour))+'</span>'+(d.exemple?'<span class="ex">exemple</span>':'')+'</div>'+
    (av?'<p class="avalider">Coché sur Pronote : montre-moi ton travail pour le valider.</p>':'')+
    '<p class="txt">'+esc(d.texte)+'</p>'+
@@ -266,6 +271,7 @@ function vDevoirs(){
 function toggleDevoir(id){
   var d=S.devoirs.filter(function(x){return x.id===id;})[0];if(!d)return;
   // L'enfant valide un devoir avec la photo de son travail (ou un mini-test pour une leçon).
+  if(device==="enfant"&&resteAFaire(d)&&estConsigne(d)){validerDevoir(id);speak("C'est noté, bravo !");return;}
   if(device==="enfant"&&resteAFaire(d)){
     ui.verif={id:id,sujet:d.matiere+" : "+d.texte};render();window.scrollTo(0,0);
     speak("Pour valider ce devoir, montre-moi ton travail en photo.");return;}
@@ -473,11 +479,11 @@ var Q_RAPIDES=["Explique-moi ma dernière leçon","Je ne comprends pas un mot","
 var Q_MAX=15;
 function vQuestions(){
   var q=ui.q||(ui.q={matiere:"",msgs:[],brouillon:""});
-  var h='<div class="card"><h2>Pose ta question</h2><p class="hint">Je t\'explique tes leçons. Je ne fais pas tes exercices à ta place, et pas de vidéos ni de sites : pour ça, demande à ta maman.</p>'+
+  var h='<div class="card"><h2>Pose ta question</h2><p class="hint">Je t\'explique tes leçons et je t\'aide à faire tes devoirs, sans donner les réponses. Tu peux me montrer ton exercice en photo. Pas de vidéos ni de sites : pour ça, demande à ta maman.</p>'+
     '<span class="lbl">Quelle matière ?</span><div class="matieres">'+MATIERES.map(function(m){
       return '<button class="mbtn" style="--mc:'+m.c+'" aria-pressed="'+(q.matiere===m.k)+'" data-act="q-m" data-m="'+esc(m.k)+'">'+esc(m.k)+'</button>';}).join("")+'</div></div>';
   if(q.msgs.length){h+='<div class="card aide">'+q.msgs.map(function(m){
-      return m.qui==="moi"?'<div class="bulle moi">'+esc(m.texte)+'</div>'
+      return m.qui==="moi"?'<div class="bulle moi">'+(m.photo?'<img class="qphoto" src="'+m.photo+'" alt="Ma photo">':'')+esc(m.texte)+'</div>'
         :'<div class="bulle elle'+(m.maman?' maman':'')+'"><span>'+esc(m.texte)+'</span>'+sayBtn(m.texte,"Écouter")+'</div>';}).join("")+
       (q.loading?'<div class="wait"><span class="dot"></span>Je réfléchis…</div>':'')+'</div>';}
   if(q.err)h+='<p class="err">'+esc(q.err)+'</p>';
@@ -485,6 +491,8 @@ function vQuestions(){
   if(posees>=Q_MAX)return '<div class="wrap">'+h+'<p><strong>Bravo pour toutes ces questions !</strong> Fais une petite pause, ou une carte mentale pour retenir.</p><button class="btn line" data-act="q-nouveau">Nouvelle discussion</button></div>';
   if(!q.loading){
     h+='<div class="rapides">'+Q_RAPIDES.map(function(x,i){return '<button class="btn small ghost" data-act="q-rapide" data-i="'+i+'">'+esc(x)+'</button>';}).join("")+'</div>'+
+      (q.photo?'<div class="row qjointe"><img class="qphoto" src="'+q.photo.url+'" alt="Photo jointe"><span>Photo prête à envoyer</span><button class="btn small line" data-act="q-photo-retirer">Retirer</button></div>'
+        :'<button class="btn line" data-act="q-photo" style="margin-top:8px">'+ICON.photo+'Montrer mon exercice en photo</button>')+
       '<label class="lbl" for="qQ">Ta question</label>'+
       '<textarea id="qQ" maxlength="300" placeholder="Ex : c\'est quoi un complément du nom ?">'+esc(q.brouillon||"")+'</textarea>'+
       '<button class="btn big" data-act="q-envoyer" style="margin-top:8px">Envoyer</button>'+
@@ -494,14 +502,18 @@ function vQuestions(){
 }
 function questionDemander(question){
   var q=ui.q;if(!q)return;
-  question=String(question||"").trim().slice(0,300);if(!question||q.loading)return;
+  question=String(question||"").trim().slice(0,300);
+  if(!question&&q.photo)question="Aide-moi avec l'exercice de la photo.";
+  if(!question||q.loading)return;
   var histo=q.msgs.slice(-12).map(function(m){return {qui:m.qui,texte:m.texte};});
-  q.msgs.push({qui:"moi",texte:question});q.brouillon="";q.loading=true;q.err="";render();
-  demander("question",{matiere:q.matiere,historique:histo,question:question}).then(function(r){
+  // La dernière photo reste jointe pour toute la discussion : l'assistant garde l'exercice sous les yeux.
+  var nouvelle=q.photo;if(nouvelle){q.derniere=nouvelle.blob;q.photo=null;}
+  q.msgs.push({qui:"moi",texte:question,photo:nouvelle&&nouvelle.url});q.brouillon="";q.loading=true;q.err="";render();
+  demander("question",{matiere:q.matiere,historique:histo,question:question},q.derniere?[q.derniere]:[]).then(function(r){
     q.loading=false;
     var t=r.message||"On reste sur tes cours : pose-moi une question sur une leçon.";
     q.msgs.push({qui:"elle",texte:t,maman:r.statut==="maman"});render();speak(t);activite();
-  }).catch(function(e){q.loading=false;q.msgs.pop();q.brouillon=question;q.err=errText(e);render();});
+  }).catch(function(e){q.loading=false;q.msgs.pop();q.brouillon=question;if(nouvelle)q.photo=nouvelle;q.err=errText(e);render();});
 }
 function vNotes(){
   var notes=S.notes.slice().sort(function(a,b){return (b.cree||"").localeCompare(a.cree||"");});
@@ -642,6 +654,8 @@ document.addEventListener("click",function(e){
   else if(a==="q-rapide"){questionDemander(Q_RAPIDES[+t.dataset.i]);}
   else if(a==="q-envoyer"){var qq=$("#qQ");questionDemander(qq&&qq.value);}
   else if(a==="q-nouveau"){ui.q={matiere:ui.q.matiere,msgs:[],brouillon:""};render();}
+  else if(a==="q-photo"){ouvrirCamera("photo","Prends ton exercice en photo, bien à plat.").then(function(b){if(b&&ui.q){ui.q.photo={blob:b,url:URL.createObjectURL(b)};render();}});}
+  else if(a==="q-photo-retirer"){ui.q.photo=null;render();}
   else if(a==="go-test"){ui.verif=null;tab="tests";ui.quiz=null;ui.prefill=t.dataset.sujet;render();window.scrollTo(0,0);}
   else if(a==="photo-del"){var k=+t.dataset.i,p=ui.photos.splice(k,1)[0];if(p)try{URL.revokeObjectURL(p.url);}catch(_){}render();}
   else if(a==="map-make"){ui.prefill="";makeMap();}
