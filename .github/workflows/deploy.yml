@@ -47,7 +47,7 @@ jobs:
         run: |
           if ! supabase secrets list --project-ref "$REF" | grep -q VAPID_PUBLIC_KEY; then
             k=$(npx --yes web-push@3.6.7 generate-vapid-keys --json)
-            supabase secrets set --project-ref "$REF" \
+            supabase secrets set --yes --project-ref "$REF" \
               VAPID_PUBLIC_KEY="$(jq -r .publicKey <<<"$k")" VAPID_PRIVATE_KEY="$(jq -r .privateKey <<<"$k")"
           fi
           s=$(openssl rand -hex 32)
@@ -62,10 +62,10 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          supabase secrets set --project-ref "$REF" ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" CRON_SECRET="$CRON_SECRET"
+          supabase secrets set --yes --project-ref "$REF" ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" CRON_SECRET="$CRON_SECRET"
           # Chaque fonction vérifie elle-même qui l'appelle (connexion ou secret du planificateur).
           for f in assistant pronote rappels compte-enfant config; do
-            supabase functions deploy "$f" --project-ref "$REF" --no-verify-jwt --use-api
+            supabase functions deploy "$f" --yes --project-ref "$REF" --no-verify-jwt --use-api
           done
       - name: Corrections de données (sans effet si déjà faites)
         run: |
