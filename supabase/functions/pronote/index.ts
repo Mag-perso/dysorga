@@ -155,7 +155,7 @@ async function synchroniser(famille: string, session: pronote.SessionHandle) {
 
   // Fin des cours de chaque jour, pour les rappels.
   const edt = await pronote.timetableFromIntervals(session, auj, new Date(auj.getTime() + 7 * 864e5));
-  pronote.parseTimetable(session, edt, { withCanceledClasses: false, withPlannedClasses: true });
+  pronote.parseTimetable(session, edt, { withCanceledClasses: true, withPlannedClasses: true });
   const finParJour = new Map<string, string>();
   for (const c of edt.classes) {
     if (c.is === "lesson" && c.canceled) continue;
@@ -164,6 +164,52 @@ async function synchroniser(famille: string, session: pronote.SessionHandle) {
   }
   if (finParJour.size) {
     await db.from("emploi_du_temps").upsert([...finParJour].map(([jour, fin]) => ({ famille_id: famille, jour, fin })), { onConflict: "famille_id,jour" });
+  }
+
+  // Planning détaillé de la semaine. Pronote change ses identifiants : on repère chaque cours par son contenu.
+  const lignesCours = sansDoublon(edt.classes.filter((c) => c.is === "lesson" || c.is === "activity").map((c) => {
+    const lecon = c.is === "lesson" ? c : null;
+    const m = lecon ? (lecon.subject ? matiere(lecon.subject.name) : "Cours") : (c.is === "activity" ? c.title : "");
+    const jour = jourPronote(c.startDate), debut = heurePronote(c.startDate), fin = heurePronote(c.endDate);
+    const annule = !!lecon?.canceled;
+    return {
+      famille_id: famille, pronote_id: cle(jour, debut, fin, m, annule ? "annule" : ""), jour, debut, fin, matiere: m,
+      salle: lecon?.classrooms.join(", ") ?? "", prof: lecon?.teacherNames.join(", ") ?? "", annule, statut: lecon?.status ?? "",
+    };
+  }));
+  const finEdt = new Date(auj.getTime() + 7 * 864e5);
+  if (lignesCours.length) {
+    const { error } = await db.from("cours").upsert(lignesCours, { onConflict: "famille_id,pronote_id" });
+    if (error) throw new Error(`cours: ${error.message}`);
+  }
+  // Cours déplacé ou supprimé : l'ancienne version disparaît.
+  let vieux = db.from("cours").delete().eq("famille_id", famille).gte("jour", jourParis(auj)).lte("jour", jourParis(finEdt));
+  if (lignesCours.length) vieux = vieux.not("pronote_id", "in", `(${lignesCours.map((l) => l.pronote_id).join(",")})`);
+  await vieux;
+
+  // Vie scolaire : observations, encouragements, retards, absences et punitions de la période en cours.
+  const ongletCarnet = session.userResource.tabs.get(pronote.TabLocation.Notebook);
+  const periodeCarnet = ongletCarnet?.defaultPeriod ?? ongletCarnet?.periods.find((p) => p.startDate <= auj && auj <= p.endDate);
+  // Si le collège n'ouvre pas cet onglet, le reste de la mise à jour continue quand même.
+  if (periodeCarnet) try {
+    const carnet = await pronote.notebook(session, periodeCarnet);
+    const genreObs = (k: number) => k === pronote.NotebookObservationKind.Encouragement ? "encouragement"
+      : k === pronote.NotebookObservationKind.LogBookIssue ? "carnet" : "observation";
+    const obs = [
+      ...carnet.observations.map((o) => ({ date: o.date, genre: genreObs(o.kind), titre: o.name, matiere: o.subject ? matiere(o.subject.name) : "", detail: o.reason ?? "" })),
+      ...carnet.delays.map((r) => ({ date: r.date, genre: "retard", titre: `Retard de ${r.minutes} min`, matiere: "", detail: r.justified ? "Justifié" : (r.reason ?? "") })),
+      ...carnet.absences.map((a) => ({ date: a.startDate, genre: "absence", titre: "Absence", matiere: "", detail: a.justified ? "Justifiée" : (a.reason ?? "") })),
+      ...carnet.punishments.map((p) => ({ date: p.dateGiven, genre: "punition", titre: p.title, matiere: "", detail: [p.reasons.join(", "), texte(p.workToDo)].filter(Boolean).join(" · ") })),
+    ].map((o) => {
+      const date = jourPronote(o.date);
+      return { famille_id: famille, pronote_id: cle(o.genre, date, o.titre, o.matiere, o.detail), date, genre: o.genre, titre: o.titre, matiere: o.matiere, detail: o.detail };
+    });
+    if (obs.length) {
+      const { error } = await db.from("observations").upsert(sansDoublon(obs), { onConflict: "famille_id,pronote_id" });
+      if (error) throw new Error(`observations: ${error.message}`);
+    }
+  } catch (e) {
+    console.warn("vie scolaire indisponible", e instanceof Error ? e.message : e);
   }
 
   await db.from("pronote_comptes").update({ derniere_synchro: new Date().toISOString(), erreur: null }).eq("famille_id", famille);

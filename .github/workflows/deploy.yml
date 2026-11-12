@@ -53,6 +53,11 @@ jobs:
           s=$(openssl rand -hex 32)
           echo "::add-mask::$s"
           echo "CRON_SECRET=$s" >> "$GITHUB_ENV"
+      - name: Planning et observations (sans effet si déjà fait)
+        run: |
+          # Avant les fonctions : la synchro Pronote écrit dans ces tables.
+          jq -n --arg q "$(cat supabase/migrations/0003_planning_observations.sql)" '{query:$q}' | curl -fsS -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d @- > /dev/null && echo "Tables planning et observations prêtes"
       - name: Fonctions
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
