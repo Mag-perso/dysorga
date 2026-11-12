@@ -1,4 +1,4 @@
-// Tout ce qui parle au serveur (Supabase) : connexion, données, assistant, Pronote, alertes.
+// Tout ce qui parle au serveur (Supabase) : connexion, données, Pronote, alertes.
 import { createClient } from "@supabase/supabase-js";
 
 export const supa = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, {
@@ -6,7 +6,7 @@ export const supa = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.
 });
 
 const DOMAINE_ENFANT = "enfant.dysorga.app";
-const LISTES = ["devoirs", "cartes", "tests", "notes", "documents"];
+const LISTES = ["devoirs", "notes", "cours", "observations"];
 
 /* ---------- connexion ---------- */
 export async function utilisateur() {
@@ -48,7 +48,7 @@ export async function monProfil(prenomParent) {
 
 /* ---------- données ---------- */
 export async function toutCharger(S) {
-  const tri = { devoirs: "pour", cartes: "cree", tests: "cree", notes: "cree", documents: "date" };
+  const tri = { devoirs: "pour", notes: "cree", cours: "jour", observations: "date" };
   await Promise.all(LISTES.map(async (t) => {
     const { data } = await supa.from(t).select("*").order(tri[t], { ascending: false }).limit(300);
     S[t] = data ?? [];
@@ -110,28 +110,6 @@ export function creerStore(S, rendre, erreur) {
       if (error) erreur(error);
     },
   };
-}
-
-/* ---------- assistant ---------- */
-async function enBase64(blob) {
-  // On réduit la photo avant l'envoi : plus rapide, et suffisant pour lire une leçon.
-  const img = await createImageBitmap(blob);
-  const max = 1600, sc = Math.min(1, max / Math.max(img.width, img.height));
-  const cv = document.createElement("canvas");
-  cv.width = Math.round(img.width * sc); cv.height = Math.round(img.height * sc);
-  cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
-  return { media_type: "image/jpeg", data: cv.toDataURL("image/jpeg", 0.8).split(",")[1] };
-}
-
-export async function demander(kind, infos, photos = []) {
-  const images = await Promise.all(photos.map(enBase64));
-  const { data, error } = await supa.functions.invoke("assistant", { body: { kind, ...infos, images } });
-  if (error) {
-    let code = "erreur";
-    try { code = (await error.context.json()).erreur ?? code; } catch { /* pas de détail */ }
-    throw { code };
-  }
-  return data;
 }
 
 /* ---------- Pronote ---------- */
