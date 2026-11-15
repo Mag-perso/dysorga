@@ -1,7 +1,7 @@
 // DysOrga : l'écran de l'appli (enfant et parent). Devoirs, planning, notes et vie scolaire, lus dans Pronote.
 import "./styles.css";
 import { supa, utilisateur, connexionParent, inscriptionParent, connexionEnfant, deconnexion, monProfil, toutCharger, ecouter, creerStore,
-  pronoteLier, pronoteSynchro, pronoteStatut, pronoteDevoirFait, creerCompteEnfant, activerAlertes, alertesActives } from "./api.js";
+  envoyerMessage, marquerLus, pronoteLier, pronoteSynchro, pronoteStatut, pronoteDevoirFait, creerCompteEnfant, activerAlertes, alertesActives } from "./api.js";
 import { ouvrirCamera, lireQrImage } from "./camera.js";
 
 var MATIERES=[
@@ -33,7 +33,7 @@ document.addEventListener("click",function(e){var b=e.target.closest("[data-say]
 
 
 /* ---------- données (Supabase) ---------- */
-var S={devoirs:[],notes:[],cours:[],observations:[],edt:[],suivi:{},reglages:{prenom:"Ethan",classe:"4e"}};
+var S={devoirs:[],notes:[],cours:[],observations:[],messages:[],edt:[],suivi:{},reglages:{prenom:"Ethan",classe:"4e"}};
 var device="enfant", profil=null;
 var Store=creerStore(S,function(){render();},dbErr);
 function dbErr(e){showSync("La sauvegarde n'a pas marché. Vérifie ta connexion internet et réessaie.");console.warn(e);}
@@ -43,8 +43,10 @@ function showSync(t){var n=$("#syncNote");n.textContent=t;n.hidden=!t;}
 function stars(){var n=0;S.devoirs.forEach(function(d){if(d.fait)n+=1;});S.notes.forEach(function(x){if(auDessus(x))n+=3;});return n;}
 
 /* ---------- état de l'écran ---------- */
-var ONGLETS=["devoirs","planning","notes","observations","parent"];
+var ONGLETS=["devoirs","planning","notes","observations","messages","parent"];
 var tab=ls("cartable.tab");if(ONGLETS.indexOf(tab)<0)tab="devoirs";
+// Ouverture depuis une notification de message.
+try{var ong=new URLSearchParams(location.search).get("onglet");if(ONGLETS.indexOf(ong)>=0)tab=ong;}catch(e){}
 var ui={addOpen:false,addM:"",addQ:addDays(1)};
 
 /* ---------- thème : 2 minutes une fois par jour (illimité en mode parent) ---------- */
@@ -104,7 +106,10 @@ function render(){
   $("#starCount").textContent=stars();
   document.querySelectorAll("nav.tabs button").forEach(function(b){b.setAttribute("aria-selected",String(b.dataset.tab===tab));});
   var v=$("#view");
-  v.innerHTML=tab==="devoirs"?vDevoirs():tab==="planning"?vPlanning():tab==="notes"?vNotes():tab==="observations"?vObservations():vParent();
+  v.innerHTML=tab==="devoirs"?vDevoirs():tab==="planning"?vPlanning():tab==="notes"?vNotes():tab==="observations"?vObservations():tab==="messages"?vMessages():vParent();
+  var nl=nonLus().length,bt=$('nav.tabs [data-tab="messages"]');
+  if(bt){var pas=bt.querySelector(".pastille");if(nl){if(!pas){pas=document.createElement("span");pas.className="pastille";bt.appendChild(pas);}pas.textContent=nl>9?"9+":nl;}else if(pas)pas.remove();}
+  if(tab==="messages"){var fil=$("#fil");if(fil)fil.scrollTop=fil.scrollHeight;lireMessages();}
 }
 
 /* ---------- DEVOIRS ---------- */
@@ -202,6 +207,44 @@ function vObservations(){
       '<p>'+esc(o.titre)+(o.matiere?' <span class="chip" style="--mc:'+mcolor(o.matiere)+'">'+esc(o.matiere)+'</span>':'')+'</p>'+
       (o.detail?'<p class="hint">'+esc(o.detail)+'</p>':'')+'<div class="row">'+sayBtn(lire,"Écouter")+'</div></div>';}).join("");
   return '<div class="wrap">'+h+'</div>';
+}
+
+/* ---------- MESSAGES entre Ethan et maman ---------- */
+function nonLus(){return S.messages.filter(function(m){return m.de!==device&&!m.lu;});}
+var lecture=false;
+function lireMessages(){
+  if(document.hidden||lecture)return;var ids=nonLus().map(function(m){return m.id;});if(!ids.length)return;
+  lecture=true;ids.forEach(function(id){var m=S.messages.filter(function(x){return x.id===id;})[0];if(m)m.lu=true;});
+  marquerLus(ids).catch(function(){}).then(function(){lecture=false;});
+  setTimeout(render,0);
+}
+var RAPIDES=["J'ai fini mes devoirs","J'ai besoin d'aide","Tu peux m'appeler ?"];
+function heureMsg(iso){var k=dayKey(new Date(iso));return (k===dayKey()?"":fmtWhen(iso).split(" à ")[0]+" ")+fmtTime(iso);}
+function vMessages(){
+  var enfant=device==="enfant",p=S.reglages.prenom||"Ethan";
+  var msgs=S.messages.slice().sort(function(a,b){return (a.cree||"").localeCompare(b.cree||"");}).slice(-60);
+  var h='<div class="card"><h2>'+(enfant?"Écrire à maman":"Messages avec "+esc(p))+'</h2>';
+  h+=msgs.length?'<div class="fil" id="fil">'+msgs.map(function(m){
+      var moi=m.de===device,qui=moi?"Moi":(enfant?"Maman":p);
+      return '<div class="bulle '+(moi?"moi":"elle")+'"><span><span class="hint">'+esc(qui)+' · '+esc(heureMsg(m.cree))+'</span><br>'+esc(m.texte)+'</span>'+(moi?'':sayBtn(m.texte,"Écouter"))+'</div>';}).join("")+'</div>'
+    :'<p class="hint">'+(enfant?"Pas encore de message. Écris à maman quand tu veux.":"Pas encore de message.")+'</p>';
+  if(enfant)h+='<div class="row rapides">'+RAPIDES.map(function(r,i){return '<button class="btn small ghost" data-act="msg-rapide" data-i="'+i+'"'+(ui.msgEnvoi?" disabled":"")+'>'+esc(r)+'</button>';}).join("")+'</div>';
+  h+='<label class="lbl" for="msgTxt">'+(enfant?"Ton message":"Votre message")+'</label>'+
+    '<textarea id="msgTxt" maxlength="1000" placeholder="'+(enfant?"Écris ici, ou touche le micro du clavier pour parler":"Écrire à "+esc(p))+'">'+esc(ui.msgBrouillon||"")+'</textarea>'+
+    (ui.msgErr?'<p class="err">'+esc(ui.msgErr)+'</p>':'')+
+    '<button class="btn big" data-act="msg-envoyer"'+(ui.msgEnvoi?" disabled":"")+'>'+(ui.msgEnvoi?"Envoi…":"Envoyer")+'</button></div>';
+  if(enfant&&ui.alertes===false)h+='<div class="card"><p>Tu veux être prévenu quand maman te répond ?</p><button class="btn line" data-act="alertes">Oui, me prévenir</button>'+(ui.alertesErr?'<p class="err">'+esc(ui.alertesErr)+'</p>':'')+'</div>';
+  return '<div class="wrap">'+h+'</div>';
+}
+function envoyer(texte){
+  texte=String(texte||"").trim();if(!texte||ui.msgEnvoi)return;
+  ui.msgEnvoi=true;ui.msgErr="";render();
+  envoyerMessage(texte).then(function(m){
+    ui.msgEnvoi=false;ui.msgBrouillon="";
+    if(m&&m.id&&!S.messages.some(function(x){return x.id===m.id;}))S.messages.unshift(m);
+    if(device==="enfant")Store.setDoc("suivi",{derniere_activite:new Date().toISOString()});
+    render();
+  }).catch(function(){ui.msgEnvoi=false;ui.msgErr="Le message n'est pas parti. Vérifie internet et réessaie.";render();});
 }
 
 /* ---------- NOTES ---------- */
@@ -329,6 +372,8 @@ document.addEventListener("click",function(e){
   if(t.dataset.tab){tab=t.dataset.tab;ls("cartable.tab",tab);render();window.scrollTo(0,0);return;}
   var a=t.dataset.act,id=t.dataset.id;
   if(a==="toggle")toggleDevoir(id);
+  else if(a==="msg-envoyer"){var mt=$("#msgTxt");ui.msgBrouillon=mt?mt.value:"";envoyer(ui.msgBrouillon);}
+  else if(a==="msg-rapide"){var mt2=$("#msgTxt");ui.msgBrouillon=mt2?mt2.value:"";envoyer(RAPIDES[+t.dataset.i]);}
   else if(a==="add-open"){ui.addOpen=true;ui.addM="";ui.addTxt="";ui.addQ=addDays(1);render();}
   else if(a==="add-close"){ui.addOpen=false;render();}
   else if(a==="add-m"){ui.addTxt=$("#addTxt").value;ui.addM=t.dataset.m;render();}
@@ -365,6 +410,7 @@ document.addEventListener("click",function(e){
     .catch(function(){showSync("La création du compte n'a pas marché. Réessaie.");});}
   else if(a==="deconnexion"){deconnexion().then(function(){location.reload();});}
 });
+document.addEventListener("input",function(e){if(e.target.id==="msgTxt")ui.msgBrouillon=e.target.value;});
 document.addEventListener("change",function(e){if(e.target.id==="fondFile"&&e.target.files&&e.target.files[0])setFond(e.target.files[0]);
   if(e.target.id==="pnQrImg"&&device==="parent"&&e.target.files&&e.target.files[0]){var f=e.target.files[0];e.target.value="";
     if(!pinPronote())return;
@@ -436,7 +482,7 @@ function demarrer(){
       if(device==="parent"&&tab==="devoirs"&&!ls("cartable.tab"))tab="parent";
       return recharger().then(function(){
         ecouter(S,render);
-        if(device==="parent")rafraichirParent();else markConnexion();
+        if(device==="parent")rafraichirParent();else{markConnexion();alertesActives().then(function(on){ui.alertes=on;render();}).catch(function(){});}
         render();
       });
     });
@@ -444,6 +490,8 @@ function demarrer(){
 }
 document.addEventListener("visibilitychange",function(){if(!document.hidden&&profil){recharger();if(device==="enfant")markConnexion();}});
 if("serviceWorker" in navigator){
+  // Notification de message touchée alors que l'appli était déjà ouverte.
+  navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&ONGLETS.indexOf(e.data.onglet)>=0){tab=e.data.onglet;if(profil)render();}});
   // Nouvelle version publiée : on recharge l'appli dès qu'elle est prête (sauf pendant une photo ou une liaison).
   var dejaControle=!!navigator.serviceWorker.controller,aRecharger=false;
   var rechargerSiLibre=function(){if(!aRecharger||document.querySelector(".camera")||ui.pronoteBusy)return;location.reload();};
