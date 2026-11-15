@@ -16,14 +16,19 @@ self.addEventListener("push", (e) => {
     badge: "icon-192.png",
     lang: "fr",
     tag: d.titre || "dysorga",
+    data: { ouvrir: d.ouvrir || "" },
   }));
 });
 
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   e.waitUntil((async () => {
+    const onglet = e.notification.data?.ouvrir || "";
     const fenetres = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    if (fenetres.length) return fenetres[0].focus();
-    return self.clients.openWindow(self.registration.scope);
+    if (fenetres.length) {
+      if (onglet) fenetres[0].postMessage({ onglet });
+      return fenetres[0].focus();
+    }
+    return self.clients.openWindow(self.registration.scope + (onglet ? "?onglet=" + onglet : ""));
   })());
 });

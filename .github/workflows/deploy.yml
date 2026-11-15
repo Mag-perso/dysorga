@@ -53,18 +53,18 @@ jobs:
           s=$(openssl rand -hex 32)
           echo "::add-mask::$s"
           echo "CRON_SECRET=$s" >> "$GITHUB_ENV"
-      - name: Planning et observations (sans effet si déjà fait)
+      - name: Planning, observations et messages (sans effet si déjà fait)
         run: |
           # Avant les fonctions : la synchro Pronote écrit dans ces tables.
-          jq -n --arg q "$(cat supabase/migrations/0003_planning_observations.sql)" '{query:$q}' | curl -fsS -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d @- > /dev/null && echo "Tables planning et observations prêtes"
+          jq -n --arg q "$(cat supabase/migrations/0003_planning_observations.sql supabase/migrations/0004_messages.sql)" '{query:$q}' | curl -fsS -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d @- > /dev/null && echo "Tables planning, observations et messages prêtes"
       - name: Fonctions
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           supabase secrets set --yes --project-ref "$REF" ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" CRON_SECRET="$CRON_SECRET"
           # Chaque fonction vérifie elle-même qui l'appelle (connexion ou secret du planificateur).
-          for f in assistant pronote rappels compte-enfant config; do
+          for f in assistant pronote rappels compte-enfant config message; do
             supabase functions deploy "$f" --yes --project-ref "$REF" --no-verify-jwt --use-api
           done
       - name: Corrections de données (sans effet si déjà faites)

@@ -6,7 +6,7 @@ export const supa = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.
 });
 
 const DOMAINE_ENFANT = "enfant.dysorga.app";
-const LISTES = ["devoirs", "notes", "cours", "observations"];
+const LISTES = ["devoirs", "notes", "cours", "observations", "messages"];
 
 /* ---------- connexion ---------- */
 export async function utilisateur() {
@@ -48,7 +48,7 @@ export async function monProfil(prenomParent) {
 
 /* ---------- données ---------- */
 export async function toutCharger(S) {
-  const tri = { devoirs: "pour", notes: "cree", cours: "jour", observations: "date" };
+  const tri = { devoirs: "pour", notes: "cree", cours: "jour", observations: "date", messages: "cree" };
   await Promise.all(LISTES.map(async (t) => {
     const { data } = await supa.from(t).select("*").order(tri[t], { ascending: false }).limit(300);
     S[t] = data ?? [];
@@ -110,6 +110,18 @@ export function creerStore(S, rendre, erreur) {
       if (error) erreur(error);
     },
   };
+}
+
+/* ---------- messages entre l'enfant et le parent ---------- */
+/** Envoie le message ; le serveur prévient l'autre téléphone. */
+export async function envoyerMessage(texte) {
+  const { data, error } = await supa.functions.invoke("message", { body: { texte } });
+  if (error) throw error;
+  return data;
+}
+export async function marquerLus(ids) {
+  if (!ids.length) return;
+  await supa.from("messages").update({ lu: true }).in("id", ids);
 }
 
 /* ---------- Pronote ---------- */
